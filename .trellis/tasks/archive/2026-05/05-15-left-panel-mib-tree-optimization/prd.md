@@ -51,11 +51,11 @@ Optimize the left panel MIB tree: fix empty OID bug, improve tree display to mat
 
 ## Acceptance Criteria
 
-- [ ] OID field in detail panel always shows a value (never empty)
-- [ ] Tree uses distinct colored icons for different node types (table/scalar/entry/column/notification)
-- [ ] Tree node layout is clean (name only, no inline OID)
-- [ ] Right-click menu has SNMP operations section (GET, GETNEXT, GETBULK, WALK, BULK_WALK)
-- [ ] Clicking SNMP operation executes query and shows results in results panel
+- [x] OID field in detail panel always shows a value (never empty)
+- [x] Tree uses distinct colored icons for different node types (table/scalar/entry/column/notification)
+- [x] Tree node layout is clean (name only, no inline OID)
+- [x] Right-click menu has SNMP operations section (GET, GETNEXT, GETBULK, WALK, BULK_WALK)
+- [x] Clicking SNMP operation executes query and shows results in results panel
 
 ## Definition of Done
 
