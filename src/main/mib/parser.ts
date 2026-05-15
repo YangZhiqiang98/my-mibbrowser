@@ -436,7 +436,7 @@ export class MibParser {
  * This builds the standard MIB tree structure with iso(1).org(3).dod(6).internet(1) as root.
  */
 export function buildMibTree(modules: MibModule[]): MibNode[] {
-  // Create a map of all nodes by name
+  // Create a map of all nodes by name (for parent lookups during relationship building)
   const nodeMap = new Map<string, MibNode>()
   const allNodes: MibNode[] = []
 
@@ -447,10 +447,9 @@ export function buildMibTree(modules: MibModule[]): MibNode[] {
     allNodes.push(node)
   }
 
-  // Add all parsed nodes to the map
+  // Add all parsed nodes to the map (name map uses first definition for parent lookups)
   for (const module of modules) {
     for (const node of module.nodes) {
-      // Handle duplicate node names: skip if already present (first definition wins)
       if (!nodeMap.has(node.name)) {
         nodeMap.set(node.name, node)
       }
@@ -461,7 +460,115 @@ export function buildMibTree(modules: MibModule[]): MibNode[] {
   // Build parent-child relationships and resolve OID paths
   buildRelationships(allNodes, nodeMap)
 
-  return allNodes
+  // --- Deduplicate by OID ---
+  // Prefer standard root nodes; merge children from duplicates.
+  const oidMap = new Map<string, MibNode>()
+  const survivingNodes: MibNode[] = []
+  const removedIds = new Set<string>()
+
+  for (const node of allNodes) {
+    if (node.oid.length === 0) {
+      // Nodes with unresolved OIDs are kept individually (orphan filter will handle them)
+      survivingNodes.push(node)
+      continue
+    }
+    const key = node.oidString
+    if (oidMap.has(key)) {
+      const existing = oidMap.get(key)!
+      // Merge: keep existing (prefer root), add children from duplicate
+      for (const childId of node.children) {
+        if (!existing.children.includes(childId)) {
+          existing.children = [...existing.children, childId]
+        }
+      }
+      // Fill in or prefer MIB-parsed properties over standard root placeholders
+      if (!existing.description && node.description) existing.description = node.description
+      if (!existing.syntax && node.syntax) existing.syntax = node.syntax
+      if (!existing.oidDef && node.oidDef) existing.oidDef = node.oidDef
+      // Prefer MIB-parsed access/status/kind over standard root defaults
+      if (node.access !== 'not-accessible' && existing.access === 'not-accessible') {
+        existing.access = node.access
+      }
+      if (node.status && node.status !== 'current') existing.status = node.status
+      if (node.kind !== 'root' && existing.kind === 'root') existing.kind = node.kind
+      // Inherit parentId from duplicate if survivor has none
+      // (standard root nodes are created with parentId: null, but MIB-parsed
+      // duplicates have the resolved parentId from buildRelationships)
+      if (!existing.parentId && node.parentId) {
+        existing.parentId = node.parentId
+      }
+      removedIds.add(node.id)
+    } else {
+      oidMap.set(key, node)
+      survivingNodes.push(node)
+    }
+  }
+
+  // Re-redirect references from removed nodes to survivors
+  const oldToNew = new Map<string, string>()
+  for (const removedId of removedIds) {
+    const removed = allNodes.find(n => n.id === removedId)
+    if (!removed) continue
+    const survivor = oidMap.get(removed.oidString)
+    if (survivor) oldToNew.set(removedId, survivor.id)
+  }
+
+  for (const node of survivingNodes) {
+    if (node.parentId && oldToNew.has(node.parentId)) {
+      node.parentId = oldToNew.get(node.parentId)!
+    }
+    node.children = node.children
+      .map(cid => oldToNew.get(cid) ?? cid)
+      .filter(cid => !removedIds.has(cid))
+  }
+  // Also update nodeMap name entries to point to survivors
+  for (const [name, node] of nodeMap) {
+    if (removedIds.has(node.id)) {
+      const survivor = oidMap.get(node.oidString)
+      if (survivor) nodeMap.set(name, survivor)
+    }
+  }
+
+  // --- Filter orphan nodes ---
+  // Only keep nodes whose parent chain can be traced to the root OID "1" (iso).
+  const nodeById = new Map<string, MibNode>()
+  for (const node of survivingNodes) {
+    nodeById.set(node.id, node)
+  }
+
+  const rootOid = '1'
+  const reachable = new Set<string>()
+
+  for (const node of survivingNodes) {
+    // Walk up parent chain
+    let current: MibNode | undefined = node
+    const chain: string[] = []
+    while (current) {
+      chain.push(current.id)
+      if (reachable.has(current.id)) {
+        // Already known reachable
+        for (const id of chain) reachable.add(id)
+        break
+      }
+      if (current.oidString === rootOid) {
+        for (const id of chain) reachable.add(id)
+        break
+      }
+      if (!current.parentId) break
+      current = nodeById.get(current.parentId)
+      if (!current) break
+    }
+  }
+
+  // Filter: only keep reachable nodes
+  const finalNodes = survivingNodes.filter(n => reachable.has(n.id))
+
+  // Clean up children arrays to remove references to non-reachable nodes
+  for (const node of finalNodes) {
+    node.children = node.children.filter(cid => reachable.has(cid))
+  }
+
+  return finalNodes
 }
 
 /**

@@ -13,7 +13,9 @@ const api = {
     getTree: (): Promise<MibNode[]> => ipcRenderer.invoke('mib:get-tree'),
     search: (query: string): Promise<MibNode[]> => ipcRenderer.invoke('mib:search', query),
     loadContent: (contents: Array<{ name: string; content: string }>): Promise<MibParseResult> =>
-      ipcRenderer.invoke('mib:load-content', contents)
+      ipcRenderer.invoke('mib:load-content', contents),
+    selectCacheDir: (): Promise<string | null> => ipcRenderer.invoke('mib:select-cache-dir'),
+    getCacheDir: (): Promise<string> => ipcRenderer.invoke('mib:get-cache-dir')
   },
 
   // SNMP operations

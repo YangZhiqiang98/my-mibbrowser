@@ -4,8 +4,9 @@ import { MibParser, buildMibTree, resolveOidToName } from '../mib/parser'
 import type { MibParseResult, MibNode, MibModule } from '../mib/types'
 import { snmpGet, snmpGetNext, snmpGetBulk, snmpSet, snmpWalk, snmpBulkWalk } from '../snmp/client'
 import type { SnmpConfig, SnmpResult, SnmpSetValue, SnmpVarbind } from '../snmp/types'
-import { readFileSync, writeFileSync, existsSync, unlinkSync } from 'fs'
-import { join } from 'path'
+import { readFileSync, writeFileSync, existsSync, unlinkSync, readdirSync, mkdirSync } from 'fs'
+import { join, basename } from 'path'
+import { createHash } from 'crypto'
 import { app } from 'electron'
 
 const mibParser = new MibParser()
@@ -14,66 +15,144 @@ const mibParser = new MibParser()
 let mibNodes: MibNode[] = []
 let accumulatedModules: MibModule[] = []
 
-const CACHE_FILE = 'mib-cache.json'
-const CACHE_VERSION = 3 // Bump when cache format or parsing logic changes
+// Track which directory each module came from, for dedup on reload
+let directoryModuleMap: Map<string, string[]> = new Map()
 
-function getCachePath(): string {
-  return join(app.getPath('userData'), CACHE_FILE)
-}
+const CACHE_VERSION = 3 // Bump when cache format or parsing logic changes
+const CACHE_DIR_CONFIG_FILE = 'cache-dir-config.json'
 
 interface MibCache {
   version?: number
   timestamp: number
   modules: MibModule[]
   nodes: MibNode[]
+  /** Original directory path that was loaded to produce this cache */
+  sourceDir?: string
+}
+
+interface CacheDirConfig {
+  cacheDir: string
 }
 
 /**
- * Save current MIB tree state to cache file.
+ * Get the path for the cache directory configuration file.
  */
-function saveCache(): void {
+function getCacheDirConfigPath(): string {
+  return join(app.getPath('userData'), CACHE_DIR_CONFIG_FILE)
+}
+
+/**
+ * Get the configured cache directory path.
+ * Returns the user-configured directory, or falls back to userData.
+ */
+function getCacheDir(): string {
   try {
+    const configPath = getCacheDirConfigPath()
+    if (existsSync(configPath)) {
+      const config: CacheDirConfig = JSON.parse(readFileSync(configPath, 'utf-8'))
+      if (config.cacheDir && existsSync(config.cacheDir)) {
+        return config.cacheDir
+      }
+    }
+  } catch {
+    // Fall through to default
+  }
+  return app.getPath('userData')
+}
+
+/**
+ * Sanitize a directory name for use as a cache file name component.
+ * Includes a short hash of the full path to avoid collisions when
+ * different directories share the same base name (e.g., C:\MIBs vs D:\MIBs).
+ */
+function sanitizeDirName(dirPath: string): string {
+  const name = basename(dirPath).replace(/[^a-zA-Z0-9_-]/g, '_')
+  const hash = createHash('md5').update(dirPath).digest('hex').slice(0, 8)
+  return `${name}_${hash}`
+}
+
+/**
+ * Get the cache file path for a specific MIB directory.
+ */
+function getDirectoryCachePath(dirPath: string): string {
+  const dirName = sanitizeDirName(dirPath)
+  return join(getCacheDir(), `mib-cache-${dirName}.json`)
+}
+
+/**
+ * Save current MIB tree state as a cache file for a specific directory.
+ */
+function saveCacheForDirectory(dirPath: string): void {
+  try {
+    const cacheDir = getCacheDir()
+    if (!existsSync(cacheDir)) {
+      mkdirSync(cacheDir, { recursive: true })
+    }
+    const cachePath = getDirectoryCachePath(dirPath)
+    const modulesForDir = directoryModuleMap.get(dirPath) ?? []
+    const modules = accumulatedModules.filter(m => modulesForDir.includes(m.name))
     const cache: MibCache = {
       version: CACHE_VERSION,
       timestamp: Date.now(),
-      modules: accumulatedModules,
-      nodes: mibNodes
+      modules,
+      nodes: [], // Tree is rebuilt from modules on load; no need to persist nodes
+      sourceDir: dirPath
     }
-    writeFileSync(getCachePath(), JSON.stringify(cache), 'utf-8')
+    writeFileSync(cachePath, JSON.stringify(cache), 'utf-8')
   } catch {
     // Silent fail - cache is optional
   }
 }
 
 /**
- * Load cached MIB tree from disk.
+ * Load all cache files from the configured cache directory and merge them.
  * Called on app startup to restore previously parsed MIB data.
- * Invalidates cache if version mismatch is detected.
  */
 export function loadMibCache(): void {
-  const cachePath = getCachePath()
-  if (!existsSync(cachePath)) return
+  const cacheDir = getCacheDir()
+  if (!existsSync(cacheDir)) return
 
   try {
-    const raw = readFileSync(cachePath, 'utf-8')
-    const cache: MibCache = JSON.parse(raw)
+    const files = readdirSync(cacheDir)
+    const cacheFiles = files.filter(f => f.startsWith('mib-cache-') && f.endsWith('.json'))
 
-    // Invalidate cache on version mismatch (e.g., after parser bug fixes)
-    if (cache.version !== CACHE_VERSION) {
+    for (const file of cacheFiles) {
+      const filePath = join(cacheDir, file)
       try {
-        unlinkSync(cachePath)
+        const raw = readFileSync(filePath, 'utf-8')
+        const cache: MibCache = JSON.parse(raw)
+
+        if (cache.version !== CACHE_VERSION) {
+          try { unlinkSync(filePath) } catch { /* ignore */ }
+          continue
+        }
+
+        if (cache.modules && cache.modules.length > 0) {
+          // Merge modules, replacing duplicates by name
+          const existingNames = new Set(accumulatedModules.map(m => m.name))
+          for (const mod of cache.modules) {
+            if (!existingNames.has(mod.name)) {
+              accumulatedModules.push(mod)
+            }
+          }
+          // Restore directory-module mapping so directory reload dedup works
+          if (cache.sourceDir) {
+            const existing = directoryModuleMap.get(cache.sourceDir) ?? []
+            const newNames = cache.modules.map(m => m.name)
+            const merged = [...new Set([...existing, ...newNames])]
+            directoryModuleMap.set(cache.sourceDir, merged)
+          }
+        }
       } catch {
-        // Ignore deletion errors
+        // Corrupt cache file - skip
       }
-      return
     }
 
-    if (cache.modules && cache.nodes) {
-      accumulatedModules = cache.modules
-      mibNodes = cache.nodes
+    if (accumulatedModules.length > 0) {
+      mibNodes = buildMibTree(accumulatedModules)
     }
   } catch {
-    // Corrupt cache - ignore, will be overwritten on next parse
+    // Directory read error - ignore
   }
 }
 
@@ -87,6 +166,10 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('mib:get-tree', handleGetMibTree)
   ipcMain.handle('mib:search', handleSearchMib)
   ipcMain.handle('mib:load-content', handleLoadMibContent)
+
+  // Cache directory operations
+  ipcMain.handle('mib:select-cache-dir', handleSelectCacheDir)
+  ipcMain.handle('mib:get-cache-dir', handleGetCacheDir)
 
   // SNMP operations
   ipcMain.handle('snmp:get', handleSnmpGet)
@@ -130,10 +213,13 @@ async function handleOpenMibFiles(): Promise<MibParseResult> {
   }
 
   const parseResult = mibParser.parseFiles(result.filePaths)
-  accumulatedModules = [...accumulatedModules, ...parseResult.modules]
-  const tree = buildMibTree(accumulatedModules)
-  mibNodes = tree
-  saveCache()
+  // Merge modules, replacing duplicates by name
+  const newNames = new Set(parseResult.modules.map(m => m.name))
+  accumulatedModules = [
+    ...accumulatedModules.filter(m => !newNames.has(m.name)),
+    ...parseResult.modules
+  ]
+  mibNodes = buildMibTree(accumulatedModules)
 
   return parseResult
 }
@@ -157,11 +243,22 @@ async function handleOpenMibDirectory(): Promise<MibParseResult> {
     return { modules: [], errors: [], warnings: [] }
   }
 
-  const parseResult = mibParser.parseDirectory(result.filePaths[0])
+  const dirPath = result.filePaths[0]
+  const parseResult = mibParser.parseDirectory(dirPath)
+
+  // Deduplicate: remove old modules from this directory, then add new ones
+  const oldModuleNames = directoryModuleMap.get(dirPath) ?? []
+  const newModuleNames = parseResult.modules.map(m => m.name)
+  accumulatedModules = accumulatedModules.filter(m => !oldModuleNames.includes(m.name))
   accumulatedModules = [...accumulatedModules, ...parseResult.modules]
-  const tree = buildMibTree(accumulatedModules)
-  mibNodes = tree
-  saveCache()
+
+  // Update directory-module mapping
+  directoryModuleMap.set(dirPath, newModuleNames)
+
+  mibNodes = buildMibTree(accumulatedModules)
+
+  // Save per-directory cache
+  saveCacheForDirectory(dirPath)
 
   return parseResult
 }
@@ -175,12 +272,52 @@ function handleLoadMibContent(
   contents: Array<{ name: string; content: string }>
 ): MibParseResult {
   const parseResult = mibParser.parseFileContents(contents)
-  accumulatedModules = [...accumulatedModules, ...parseResult.modules]
-  const tree = buildMibTree(accumulatedModules)
-  mibNodes = tree
-  saveCache()
+  // Merge modules, replacing duplicates by name
+  const newNames = new Set(parseResult.modules.map(m => m.name))
+  accumulatedModules = [
+    ...accumulatedModules.filter(m => !newNames.has(m.name)),
+    ...parseResult.modules
+  ]
+  mibNodes = buildMibTree(accumulatedModules)
 
   return parseResult
+}
+
+/**
+ * Select a custom cache directory via folder picker.
+ * Persists the selection and loads any existing cache files from that directory.
+ */
+async function handleSelectCacheDir(): Promise<string | null> {
+  const window = BrowserWindow.getFocusedWindow()
+  if (!window) return null
+
+  const result = await dialog.showOpenDialog(window, {
+    title: 'Select Cache Directory',
+    properties: ['openDirectory']
+  })
+
+  if (result.canceled || result.filePaths.length === 0) return null
+
+  const cacheDir = result.filePaths[0]
+  try {
+    const configPath = getCacheDirConfigPath()
+    const config: CacheDirConfig = { cacheDir }
+    writeFileSync(configPath, JSON.stringify(config), 'utf-8')
+  } catch {
+    // Silent fail
+  }
+
+  // Load cache files from the newly selected directory
+  loadMibCache()
+
+  return cacheDir
+}
+
+/**
+ * Get the currently configured cache directory path.
+ */
+function handleGetCacheDir(): string {
+  return getCacheDir()
 }
 
 /**

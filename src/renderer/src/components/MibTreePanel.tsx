@@ -18,7 +18,8 @@ import {
   ScissorOutlined,
   NodeIndexOutlined,
   SwapOutlined,
-  ReloadOutlined
+  ReloadOutlined,
+  DatabaseOutlined
 } from '@ant-design/icons'
 import type { DataNode, EventDataNode } from 'antd/es/tree'
 import { useAppStore } from '../stores/appStore'
@@ -169,6 +170,18 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
       setStatusMessage(`Loaded ${result.modules.length} module(s)`)
     } else if (result.errors.length === 0) {
       setStatusMessage('Ready')
+    }
+  }, [])
+
+  const handleSelectCacheDir = useCallback(async () => {
+    const cacheDir = await window.api.mib.selectCacheDir()
+    if (cacheDir) {
+      // Refresh tree from newly loaded cache files
+      const nodes = await window.api.mib.getTree()
+      const tree = buildTreeFromNodes(nodes)
+      setMibTree(tree)
+      message.success(`Cache directory set: ${cacheDir}`)
+      setStatusMessage(`Cache directory: ${cacheDir}`)
     }
   }, [])
 
@@ -468,6 +481,15 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
               onClick={handleOpenDirectory}
             >
               Directory
+            </Button>
+          </Tooltip>
+          <Tooltip title="Select Cache Directory">
+            <Button
+              icon={<DatabaseOutlined />}
+              size="small"
+              onClick={handleSelectCacheDir}
+            >
+              Cache
             </Button>
           </Tooltip>
         </div>

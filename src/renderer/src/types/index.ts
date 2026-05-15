@@ -10,6 +10,8 @@ declare global {
         getTree: () => Promise<MibNode[]>
         search: (query: string) => Promise<MibNode[]>
         loadContent: (contents: Array<{ name: string; content: string }>) => Promise<MibParseResult>
+        selectCacheDir: () => Promise<string | null>
+        getCacheDir: () => Promise<string>
       }
       snmp: {
         get: (config: SnmpConfig, oids: string[]) => Promise<SnmpResult>
