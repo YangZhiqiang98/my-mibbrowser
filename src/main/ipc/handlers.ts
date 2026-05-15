@@ -15,7 +15,7 @@ let mibNodes: MibNode[] = []
 let accumulatedModules: MibModule[] = []
 
 const CACHE_FILE = 'mib-cache.json'
-const CACHE_VERSION = 2 // Bump when cache format or parsing logic changes
+const CACHE_VERSION = 3 // Bump when cache format or parsing logic changes
 
 function getCachePath(): string {
   return join(app.getPath('userData'), CACHE_FILE)

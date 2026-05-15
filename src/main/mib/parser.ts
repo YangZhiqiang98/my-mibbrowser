@@ -137,6 +137,10 @@ export class MibParser {
     const notifications = this.parseNotificationTypes(contentWithoutImports, moduleName)
     module.nodes.push(...notifications)
 
+    // Parse OBJECT IDENTIFIER definitions (e.g. "rcOptBertObjects OBJECT IDENTIFIER ::= { parent 1 }")
+    const objectIdDefs = this.parseObjectIdDefs(contentWithoutImports, moduleName)
+    module.nodes.push(...objectIdDefs)
+
     this.modules.push(module)
   }
 
@@ -246,7 +250,7 @@ export class MibParser {
    */
   private parseObjectIdentities(content: string, moduleName: string): MibNode[] {
     const nodes: MibNode[] = []
-    const regex = /(\S+)\s+OBJECT-IDENTITY\s*([\s\S]*?)(?::=\s*\{([^}]+)\})/g
+    const regex = /(\S+)\s+(?:OBJECT-IDENTITY|MODULE-IDENTITY)\s*([\s\S]*?)(?::=\s*\{([^}]+)\})/g
     let match: RegExpExecArray | null
 
     while ((match = regex.exec(content)) !== null) {
@@ -305,6 +309,43 @@ export class MibParser {
         status,
         description: this.cleanDescription(description),
         kind: 'notification',
+        module: moduleName,
+        parentId: null,
+        children: [],
+        isTable: false,
+        indexColumns: [],
+        oidDef
+      }
+
+      nodes.push(node)
+    }
+
+    return nodes
+  }
+
+  /**
+   * Parse OBJECT IDENTIFIER definitions (e.g. "rcOptBertObjects OBJECT IDENTIFIER ::= { parent 1 }")
+   * These are container/group nodes commonly used in MIB files to organize subtrees.
+   */
+  private parseObjectIdDefs(content: string, moduleName: string): MibNode[] {
+    const nodes: MibNode[] = []
+    const regex = /(\S+)\s+OBJECT\s+IDENTIFIER\s*::=\s*\{([^}]+)\}/g
+    let match: RegExpExecArray | null
+
+    while ((match = regex.exec(content)) !== null) {
+      const name = match[1]
+      const oidDef = match[2].trim()
+
+      const node: MibNode = {
+        id: `node-${++this.nodeIdCounter}`,
+        name,
+        oid: [],
+        oidString: '',
+        syntax: 'OBJECT IDENTIFIER',
+        access: 'not-accessible',
+        status: 'current',
+        description: '',
+        kind: 'group',
         module: moduleName,
         parentId: null,
         children: [],
