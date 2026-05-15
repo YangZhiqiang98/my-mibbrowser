@@ -1,0 +1,11 @@
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "Main process module organization: ipc/, mib/, snmp/ structure"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "IPC result object pattern for MIB/SNMP operations"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "JSON persistence pattern for connection profiles"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "TypeScript strict, no any, immutable updates, review checklist"}
+{"file": ".trellis/spec/frontend/directory-structure.md", "reason": "Renderer component/store/types organization and @ alias"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "React component structure, Antd patterns, no React.FC"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "Zustand selector pattern, immutable updates, store conventions"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "TypeScript conventions, interface vs type, no any"}
+{"file": ".trellis/spec/frontend/hook-guidelines.md", "reason": "Zustand selector usage, custom hook patterns"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Frontend review checklist, no console.log, build verification"}
+{"file": ".trellis/tasks/05-15-mib-tree-build-and-snmp-ui-integration/prd.md", "reason": "Task requirements and acceptance criteria"}

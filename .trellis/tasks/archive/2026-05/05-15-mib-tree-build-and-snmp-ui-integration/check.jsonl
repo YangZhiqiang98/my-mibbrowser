@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Review checklist, TypeScript strict, build verification commands"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Frontend review checklist, no any, no console.log"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Verify IPC handlers return result objects, never throw"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "Verify Zustand selector pattern, immutable updates"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "Check for any types, proper interface usage"}
+{"file": ".trellis/tasks/05-15-mib-tree-build-and-snmp-ui-integration/prd.md", "reason": "Verify acceptance criteria are met"}
