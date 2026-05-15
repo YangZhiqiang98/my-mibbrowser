@@ -465,7 +465,6 @@ function parseOidDef(oidDef: string): { parentName: string; childNumber: number 
   if (!trimmed) return null
 
   // Match patterns like "parentName childNumber"
-  // Also handle forms with extra whitespace or multiple segments like "iso(1) org(3) dod(6)"
   const simpleMatch = trimmed.match(/^(\S+)\s+(\d+)$/)
   if (simpleMatch) {
     return {
@@ -475,6 +474,44 @@ function parseOidDef(oidDef: string): { parentName: string; childNumber: number 
   }
 
   return null
+}
+
+/**
+ * Parse a multi-segment OID definition like "iso(1) org(3) dod(6) internet(1) mgmt(2) mib-2(1) 1"
+ * and return the fully-qualified numeric OID array, or null if it cannot be fully resolved.
+ */
+function parseMultiSegmentOidDef(oidDef: string): number[] | null {
+  const trimmed = oidDef.trim()
+  if (!trimmed) return null
+
+  // Match segments like: name(number) or standalone number
+  // e.g. "iso(1) org(3) dod(6) internet(1) mgmt(2) mib-2(1) 1"
+  const segments: Array<{ name: string; number: number | null }> = []
+  const segRegex = /(\S+?)\((\d+)\)|(\d+)/g
+  let segMatch: RegExpExecArray | null
+  while ((segMatch = segRegex.exec(trimmed)) !== null) {
+    if (segMatch[1] !== undefined) {
+      // name(number) form
+      segments.push({ name: segMatch[1], number: parseInt(segMatch[2], 10) })
+    } else if (segMatch[3] !== undefined) {
+      // standalone number
+      segments.push({ name: '', number: parseInt(segMatch[3], 10) })
+    }
+  }
+
+  if (segments.length === 0) return null
+
+  // If all segments have numeric values, build the OID directly
+  const oidParts: number[] = []
+  for (const seg of segments) {
+    if (seg.number !== null) {
+      oidParts.push(seg.number)
+    } else {
+      return null
+    }
+  }
+
+  return oidParts.length > 0 ? oidParts : null
 }
 
 /**
@@ -492,7 +529,24 @@ function buildRelationships(nodes: MibNode[], nodeMap: Map<string, MibNode>): vo
     if (!node.oidDef) continue
 
     const parsed = parseOidDef(node.oidDef)
-    if (!parsed) continue
+    if (!parsed) {
+      // Try multi-segment OID definition as fallback
+      const multiOid = parseMultiSegmentOidDef(node.oidDef)
+      if (multiOid && multiOid.length > 0) {
+        node.oid = [...multiOid]
+        node.oidString = node.oid.join('.')
+        // Try to find parent from the OID prefix
+        const parentOid = multiOid.slice(0, -1).join('.')
+        const parent = nodes.find(n => n.oidString === parentOid && n.oid.length > 0)
+        if (parent) {
+          node.parentId = parent.id
+          if (!parent.children.includes(node.id)) {
+            parent.children = [...parent.children, node.id]
+          }
+        }
+      }
+      continue
+    }
 
     const { parentName, childNumber } = parsed
     const parent = nodeMap.get(parentName)

@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react'
+import React, { useEffect, useState, useCallback, useRef } from 'react'
 import { ConfigProvider, App as AntApp } from 'antd'
 import zhCN from 'antd/locale/zh_CN'
 import { Toolbar } from './components/Toolbar'
@@ -12,6 +12,39 @@ import { buildTreeFromNodes } from './utils/mibTreeUtils'
 export default function App(): React.ReactElement {
   const setProfiles = useAppStore((s) => s.setProfiles)
   const setMibTree = useAppStore((s) => s.setMibTree)
+
+  const [leftPanelWidth, setLeftPanelWidth] = useState(320)
+  const isDragging = useRef(false)
+  const startX = useRef(0)
+  const startWidth = useRef(0)
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    isDragging.current = true
+    startX.current = e.clientX
+    startWidth.current = leftPanelWidth
+    e.preventDefault()
+  }, [leftPanelWidth])
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isDragging.current) return
+      const delta = e.clientX - startX.current
+      const newWidth = Math.min(600, Math.max(200, startWidth.current + delta))
+      setLeftPanelWidth(newWidth)
+    }
+
+    const handleMouseUp = () => {
+      isDragging.current = false
+    }
+
+    document.addEventListener('mousemove', handleMouseMove)
+    document.addEventListener('mouseup', handleMouseUp)
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove)
+      document.removeEventListener('mouseup', handleMouseUp)
+    }
+  }, [])
 
   useEffect(() => {
     // Load saved profiles on startup
@@ -31,7 +64,11 @@ export default function App(): React.ReactElement {
         <div className="app-container">
           <Toolbar />
           <div className="main-content">
-            <MibTreePanel />
+            <MibTreePanel width={leftPanelWidth} />
+            <div
+              className="resize-handle"
+              onMouseDown={handleMouseDown}
+            />
             <div className="right-panel">
               <QueryPanel />
               <ResultsPanel />

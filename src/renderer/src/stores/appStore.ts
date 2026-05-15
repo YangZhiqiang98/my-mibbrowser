@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import type { ResultRow, ProfileItem, MibTreeNodeData } from '../types'
-import type { SnmpConfig, SnmpOperation, SecurityLevel, AuthProtocol, PrivProtocol } from '../../../main/snmp/types'
+import type { SnmpConfig, SnmpOperation } from '../../../main/snmp/types'
 
 interface AppState {
   // MIB tree

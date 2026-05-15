@@ -65,9 +65,8 @@ html, body, #root {
 
 /* Left panel - MIB Tree */
 .mib-tree-panel {
-  width: 320px;
-  min-width: 250px;
-  max-width: 500px;
+  min-width: 200px;
+  max-width: 600px;
   background: #fff;
   border-right: 1px solid #e8e8e8;
   display: flex;

@@ -1,23 +1,60 @@
-import React, { useState } from 'react'
-import { Input, Select, InputNumber, Button, Dropdown, Modal, Space, Tooltip } from 'antd'
+import React, { useState, useCallback } from 'react'
+import { Input, Select, InputNumber, Button, Dropdown, Modal, Space, Tooltip, App } from 'antd'
 import {
   SettingOutlined,
   SaveOutlined,
   FolderOpenOutlined,
   DeleteOutlined,
-  GlobalOutlined
+  GlobalOutlined,
+  ApiOutlined
 } from '@ant-design/icons'
 import { useAppStore } from '../stores/appStore'
 import type { SnmpConfig, SecurityLevel, AuthProtocol, PrivProtocol } from '../../../main/snmp/types'
 
 export function Toolbar(): React.ReactElement {
+  const { message } = App.useApp()
   const config = useAppStore((s) => s.snmpConfig)
   const setConfig = useAppStore((s) => s.setSnmpConfig)
   const profiles = useAppStore((s) => s.profiles)
   const setProfiles = useAppStore((s) => s.setProfiles)
+  const setConnectionStatus = useAppStore((s) => s.setConnectionStatus)
+  const setStatusMessage = useAppStore((s) => s.setStatusMessage)
   const [showV3Config, setShowV3Config] = useState(false)
   const [profileName, setProfileName] = useState('')
   const [showSaveModal, setShowSaveModal] = useState(false)
+  const [isTesting, setIsTesting] = useState(false)
+
+  const handleTestConnection = useCallback(async () => {
+    if (!config.host.trim()) {
+      message.warning('Please enter a host address')
+      return
+    }
+
+    setIsTesting(true)
+    setConnectionStatus('connecting')
+    setStatusMessage('Testing connection...')
+
+    try {
+      const result = await window.api.snmp.get(config, ['1.3.6.1.2.1.1.1.0'])
+      if (result.success && result.varbinds.length > 0) {
+        const sysDescr = String(result.varbinds[0].value ?? '(empty)')
+        setConnectionStatus('connected')
+        message.success(`Connected: ${sysDescr.substring(0, 80)}`)
+        setStatusMessage(`Connected (${result.responseTime}ms)`)
+      } else {
+        setConnectionStatus('error')
+        message.error(`Connection failed: ${result.error ?? 'No response'}`)
+        setStatusMessage(`Test failed: ${result.error ?? 'No response'}`)
+      }
+    } catch (err) {
+      setConnectionStatus('error')
+      const errMsg = err instanceof Error ? err.message : String(err)
+      message.error(`Connection error: ${errMsg}`)
+      setStatusMessage(`Test error: ${errMsg}`)
+    } finally {
+      setIsTesting(false)
+    }
+  }, [config, message, setConnectionStatus, setStatusMessage])
 
   const handleVersionChange = (version: string) => {
     setConfig({ version: version as SnmpConfig['version'] })
@@ -160,6 +197,17 @@ export function Toolbar(): React.ReactElement {
           v3 Config
         </Button>
       )}
+
+      <Tooltip title="Test connection (GET sysDescr.0)">
+        <Button
+          icon={<ApiOutlined />}
+          size="small"
+          loading={isTesting}
+          onClick={handleTestConnection}
+        >
+          Test
+        </Button>
+      </Tooltip>
 
       <Space size="small" style={{ marginLeft: 'auto' }}>
         <span style={{ fontSize: 12, color: '#666' }}>Timeout:</span>

@@ -97,12 +97,10 @@ function createSession(config: SnmpConfig): ReturnType<typeof snmp.createSession
       user.privKey = config.privPassword
     }
 
-    return snmp.createSession({
-      host: config.host,
+    return snmp.createV3Session(config.host, user, {
       port: config.port,
-      timeout: config.timeout / 1000,
+      timeout: config.timeout,
       retries: config.retries,
-      version: snmp.Version3,
       engineID: undefined,
       transport: 'udp4'
     })
@@ -110,7 +108,7 @@ function createSession(config: SnmpConfig): ReturnType<typeof snmp.createSession
 
   return snmp.createSession(config.host, config.community, {
     port: config.port,
-    timeout: config.timeout / 1000,
+    timeout: config.timeout,
     retries: config.retries,
     version: config.version === 'v1' ? snmp.Version1 : snmp.Version2c
   })

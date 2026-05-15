@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useMemo } from 'react'
-import { Input, Button, Tooltip, message, Tree } from 'antd'
+import { Input, Button, Tooltip, message, Tree, Dropdown } from 'antd'
+import type { MenuProps } from 'antd'
 import {
   SearchOutlined,
   FolderOpenOutlined,
@@ -8,14 +9,22 @@ import {
   TableOutlined,
   ClusterOutlined,
   AlertOutlined,
-  InfoCircleOutlined
+  InfoCircleOutlined,
+  CopyOutlined,
+  ExpandOutlined,
+  CompressOutlined,
+  AimOutlined
 } from '@ant-design/icons'
-import type { DataNode } from 'antd/es/tree'
+import type { DataNode, EventDataNode } from 'antd/es/tree'
 import { useAppStore } from '../stores/appStore'
 import type { MibTreeNodeData } from '../types'
 import { buildTreeFromNodes } from '../utils/mibTreeUtils'
 
-export function MibTreePanel(): React.ReactElement {
+interface MibTreePanelProps {
+  width: number
+}
+
+export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
   const mibTree = useAppStore((s) => s.mibTree)
   const setMibTree = useAppStore((s) => s.setMibTree)
   const selectedNode = useAppStore((s) => s.selectedMibNode)
@@ -90,9 +99,75 @@ export function MibTreePanel(): React.ReactElement {
     }
   }, [mibTree])
 
-  const handleDoubleClick = useCallback((node: MibTreeNodeData) => {
-    setQueryOid(node.oid)
+  const [contextMenuNode, setContextMenuNode] = useState<MibTreeNodeData | null>(null)
+
+  const collectSubtreeKeys = useCallback((node: MibTreeNodeData): string[] => {
+    const keys = [node.id]
+    for (const child of node.children) {
+      keys.push(...collectSubtreeKeys(child))
+    }
+    return keys
   }, [])
+
+  const handleRightClick = useCallback(({ node }: { node: EventDataNode<DataNode> }) => {
+    const found = findNodeById(mibTree, node.key as string)
+    if (found) {
+      setContextMenuNode(found)
+    }
+  }, [mibTree])
+
+  const contextMenuItems: MenuProps['items'] = useMemo(() => {
+    if (!contextMenuNode) return []
+
+    return [
+      {
+        key: 'copy-oid',
+        icon: <CopyOutlined />,
+        label: 'Copy OID',
+        onClick: () => {
+          navigator.clipboard.writeText(contextMenuNode.oid).catch(() => {})
+          message.success('OID copied')
+        }
+      },
+      {
+        key: 'copy-name',
+        icon: <CopyOutlined />,
+        label: 'Copy Name',
+        onClick: () => {
+          navigator.clipboard.writeText(contextMenuNode.name).catch(() => {})
+          message.success('Name copied')
+        }
+      },
+      {
+        key: 'set-query-oid',
+        icon: <AimOutlined />,
+        label: 'Set as Query OID',
+        onClick: () => {
+          setQueryOid(contextMenuNode.oid)
+          setSelectedNode(contextMenuNode)
+        }
+      },
+      { type: 'divider' as const },
+      {
+        key: 'expand-all',
+        icon: <ExpandOutlined />,
+        label: 'Expand All',
+        onClick: () => {
+          const allKeys = collectSubtreeKeys(contextMenuNode)
+          setExpandedKeys((prev) => [...new Set([...prev, ...allKeys])])
+        }
+      },
+      {
+        key: 'collapse-all',
+        icon: <CompressOutlined />,
+        label: 'Collapse All',
+        onClick: () => {
+          const subtreeKeys = new Set(collectSubtreeKeys(contextMenuNode))
+          setExpandedKeys((prev) => prev.filter((k) => !subtreeKeys.has(k)))
+        }
+      }
+    ]
+  }, [contextMenuNode, collectSubtreeKeys, setQueryOid, setSelectedNode])
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -167,7 +242,11 @@ export function MibTreePanel(): React.ReactElement {
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
-      style={isDragOver ? { borderRight: '2px solid #1890ff', background: '#e6f7ff' } : undefined}
+      style={{
+        width: `${width}px`,
+        minWidth: '200px',
+        ...(isDragOver ? { borderRight: '2px solid #1890ff', background: '#e6f7ff' } : {})
+      }}
     >
       <div className="mib-tree-header">
         <h3>
@@ -208,16 +287,24 @@ export function MibTreePanel(): React.ReactElement {
 
       <div className="mib-tree-content">
         {filteredTreeData.length > 0 ? (
-          <Tree
-            treeData={filteredTreeData}
-            expandedKeys={expandedKeys}
-            onExpand={(keys) => setExpandedKeys(keys as string[])}
-            selectedKeys={selectedNode ? [selectedNode.id] : []}
-            onSelect={(keys) => handleSelect(keys)}
-            showIcon
-            blockNode
-            style={{ background: 'transparent' }}
-          />
+          <Dropdown
+            menu={{ items: contextMenuItems }}
+            trigger={['contextMenu']}
+          >
+            <div>
+              <Tree
+                treeData={filteredTreeData}
+                expandedKeys={expandedKeys}
+                onExpand={(keys) => setExpandedKeys(keys as string[])}
+                selectedKeys={selectedNode ? [selectedNode.id] : []}
+                onSelect={(keys) => handleSelect(keys)}
+                onRightClick={handleRightClick}
+                showIcon
+                blockNode
+                style={{ background: 'transparent' }}
+              />
+            </div>
+          </Dropdown>
         ) : (
           <div style={{ textAlign: 'center', padding: '40px 20px', color: '#999' }}>
             <ClusterOutlined style={{ fontSize: 48, marginBottom: 16, display: 'block' }} />
