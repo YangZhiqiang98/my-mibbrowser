@@ -38,3 +38,36 @@ Upgraded all project dependencies to latest major versions. Fixed vite version c
 ### Next Steps
 
 - None - task complete
+
+
+## Session 2: MIB tree OID construction + SNMP UI integration
+
+**Date**: 2026-05-15
+**Task**: MIB tree OID construction + SNMP UI integration
+**Branch**: `master`
+
+### Summary
+
+Completed MIB tree OID resolution (::={ parent child } → full OID path), OID-to-name reverse lookup for SNMP results, drag-and-drop file loading, incremental MIB loading with cross-module reference resolution. Fixed OID prefix matching bug. All checks pass.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `0491286` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
