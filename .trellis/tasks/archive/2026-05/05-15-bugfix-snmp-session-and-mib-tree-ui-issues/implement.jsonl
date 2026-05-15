@@ -1,0 +1,7 @@
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "IPC result object pattern for SNMP operations"}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "Main process module organization"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "TypeScript strict, no any, build verification"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "React component structure, Antd patterns"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "Zustand selector pattern, store conventions"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Frontend review checklist, no console.log"}
+{"file": ".trellis/tasks/05-15-bugfix-snmp-session-and-mib-tree-ui-issues/prd.md", "reason": "Bug list and acceptance criteria"}

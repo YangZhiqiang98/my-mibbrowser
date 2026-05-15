@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Review checklist, build verification"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Frontend review checklist"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Verify SNMP handlers return proper result objects"}
+{"file": ".trellis/tasks/05-15-bugfix-snmp-session-and-mib-tree-ui-issues/prd.md", "reason": "Verify all 5 bugs fixed per acceptance criteria"}
