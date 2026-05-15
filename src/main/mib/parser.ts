@@ -1,0 +1,445 @@
+import { readFileSync, readdirSync, existsSync } from 'fs'
+import { join, extname, basename } from 'path'
+import type { MibNode, MibModule, MibParseResult, MibParseError, MibAccess, MibStatus, MibNodeKind } from './types'
+
+/**
+ * Simple SMI MIB file parser.
+ * Handles SMIv1 and SMIv2 syntax for common MIB files.
+ */
+export class MibParser {
+  private modules: MibModule[] = []
+  private errors: MibParseError[] = []
+  private warnings: string[] = []
+  private nodeIdCounter = 0
+
+  /**
+   * Parse one or more MIB files
+   */
+  parseFiles(filePaths: string[]): MibParseResult {
+    this.modules = []
+    this.errors = []
+    this.warnings = []
+    this.nodeIdCounter = 0
+
+    for (const filePath of filePaths) {
+      try {
+        const content = readFileSync(filePath, 'utf-8')
+        this.parseModule(content, basename(filePath))
+      } catch (err) {
+        this.errors.push({
+          line: 0,
+          column: 0,
+          message: `Failed to read file ${filePath}: ${err instanceof Error ? err.message : String(err)}`,
+          severity: 'error'
+        })
+      }
+    }
+
+    return {
+      modules: this.modules,
+      errors: this.errors,
+      warnings: this.warnings
+    }
+  }
+
+  /**
+   * Parse all MIB files in a directory
+   */
+  parseDirectory(dirPath: string): MibParseResult {
+    if (!existsSync(dirPath)) {
+      return {
+        modules: [],
+        errors: [{ line: 0, column: 0, message: `Directory not found: ${dirPath}`, severity: 'error' }],
+        warnings: []
+      }
+    }
+
+    const extensions = ['.my', '.mib', '.txt']
+    const files = readdirSync(dirPath)
+      .filter(f => extensions.includes(extname(f).toLowerCase()))
+      .map(f => join(dirPath, f))
+
+    return this.parseFiles(files)
+  }
+
+  /**
+   * Parse a single MIB module from text content
+   */
+  private parseModule(content: string, fileName: string): void {
+    const lines = content.split('\n')
+    const moduleName = this.extractModuleName(content, fileName)
+
+    const module: MibModule = {
+      name: moduleName,
+      description: '',
+      lastUpdated: '',
+      organization: '',
+      contactInfo: '',
+      rootOid: '',
+      nodes: [],
+      imports: {}
+    }
+
+    // Parse imports
+    module.imports = this.parseImports(content)
+
+    // Parse module identity
+    this.parseModuleIdentity(content, module)
+
+    // Parse object type definitions
+    const objectTypes = this.parseObjectTypes(content, moduleName)
+    module.nodes.push(...objectTypes)
+
+    // Parse object identity definitions
+    const objectIdentities = this.parseObjectIdentities(content, moduleName)
+    module.nodes.push(...objectIdentities)
+
+    // Parse notification types
+    const notifications = this.parseNotificationTypes(content, moduleName)
+    module.nodes.push(...notifications)
+
+    this.modules.push(module)
+  }
+
+  /**
+   * Extract module name from MIB content
+   */
+  private extractModuleName(content: string, fileName: string): string {
+    // Try to match "MODULE-IDENTITY" pattern or "DEFINITIONS" pattern
+    const moduleMatch = content.match(/^(\S+)\s+DEFINITIONS\s*::=\s*BEGIN/i)
+    if (moduleMatch) {
+      return moduleMatch[1]
+    }
+    // Try MODULE-IDENTITY in OBJECT IDENTIFIER
+    const identityMatch = content.match(/(\S+)\s+MODULE-IDENTITY/i)
+    if (identityMatch) {
+      return identityMatch[1]
+    }
+    return basename(fileName, extname(fileName))
+  }
+
+  /**
+   * Parse IMPORTS section
+   */
+  private parseImports(content: string): Record<string, string[]> {
+    const imports: Record<string, string[]> = {}
+    const importMatch = content.match(/IMPORTS\s*([\s\S]*?);/i)
+
+    if (!importMatch) return imports
+
+    const importBlock = importMatch[1]
+    // Match "symbol1, symbol2 FROM module"
+    const fromMatches = importBlock.matchAll(/([^;]+?)\s+FROM\s+(\S+)/g)
+
+    for (const match of fromMatches) {
+      const symbols = match[1].split(',').map(s => s.trim()).filter(s => s.length > 0)
+      const moduleName = match[2]
+      imports[moduleName] = symbols
+    }
+
+    return imports
+  }
+
+  /**
+   * Parse MODULE-IDENTITY section
+   */
+  private parseModuleIdentity(content: string, module: MibModule): void {
+    const lastUpdatedMatch = content.match(/LAST-UPDATED\s*"([^"]+)"/)
+    if (lastUpdatedMatch) module.lastUpdated = lastUpdatedMatch[1]
+
+    const orgMatch = content.match(/ORGANIZATION\s*"([^"]+)"/)
+    if (orgMatch) module.organization = orgMatch[1]
+
+    const contactMatch = content.match(/CONTACT-INFO\s*"([^"]+)"/)
+    if (contactMatch) module.contactInfo = contactMatch[1]
+
+    const descMatch = content.match(/DESCRIPTION\s*"([^"]+)"/)
+    if (descMatch) module.description = descMatch[1]
+  }
+
+  /**
+   * Parse all OBJECT-TYPE definitions
+   */
+  private parseObjectTypes(content: string, moduleName: string): MibNode[] {
+    const nodes: MibNode[] = []
+
+    // Match OBJECT-TYPE blocks
+    const objectTypeRegex = /(\S+)\s+OBJECT-TYPE\s*([\s\S]*?)(?::=\s*\{([^}]+)\})/g
+    let match: RegExpExecArray | null
+
+    while ((match = objectTypeRegex.exec(content)) !== null) {
+      const name = match[1]
+      const body = match[2]
+      const oidDef = match[3].trim()
+
+      const syntax = this.extractField(body, 'SYNTAX') || ''
+      const access = this.extractAccess(body)
+      const status = this.extractStatus(body)
+      const description = this.extractField(body, 'DESCRIPTION') || ''
+      const kind = this.determineKind(syntax, access)
+
+      const node: MibNode = {
+        id: `node-${++this.nodeIdCounter}`,
+        name,
+        oid: [],
+        oidString: '',
+        syntax,
+        access,
+        status,
+        description: this.cleanDescription(description),
+        kind,
+        module: moduleName,
+        parentId: null,
+        children: [],
+        isTable: syntax.includes('SEQUENCE OF') || syntax.includes('SEQUENCE'),
+        indexColumns: this.extractIndexColumns(body)
+      }
+
+      nodes.push(node)
+    }
+
+    return nodes
+  }
+
+  /**
+   * Parse OBJECT-IDENTITY definitions
+   */
+  private parseObjectIdentities(content: string, moduleName: string): MibNode[] {
+    const nodes: MibNode[] = []
+    const regex = /(\S+)\s+OBJECT-IDENTITY\s*([\s\S]*?)(?::=\s*\{([^}]+)\})/g
+    let match: RegExpExecArray | null
+
+    while ((match = regex.exec(content)) !== null) {
+      const name = match[1]
+      const body = match[2]
+      const description = this.extractField(body, 'DESCRIPTION') || ''
+      const status = this.extractStatus(body)
+
+      const node: MibNode = {
+        id: `node-${++this.nodeIdCounter}`,
+        name,
+        oid: [],
+        oidString: '',
+        syntax: 'OBJECT-IDENTITY',
+        access: 'not-accessible',
+        status,
+        description: this.cleanDescription(description),
+        kind: 'group',
+        module: moduleName,
+        parentId: null,
+        children: [],
+        isTable: false,
+        indexColumns: []
+      }
+
+      nodes.push(node)
+    }
+
+    return nodes
+  }
+
+  /**
+   * Parse NOTIFICATION-TYPE definitions
+   */
+  private parseNotificationTypes(content: string, moduleName: string): MibNode[] {
+    const nodes: MibNode[] = []
+    const regex = /(\S+)\s+NOTIFICATION-TYPE\s*([\s\S]*?)(?::=\s*\{([^}]+)\})/g
+    let match: RegExpExecArray | null
+
+    while ((match = regex.exec(content)) !== null) {
+      const name = match[1]
+      const body = match[2]
+      const description = this.extractField(body, 'DESCRIPTION') || ''
+      const status = this.extractStatus(body)
+
+      const node: MibNode = {
+        id: `node-${++this.nodeIdCounter}`,
+        name,
+        oid: [],
+        oidString: '',
+        syntax: 'NOTIFICATION-TYPE',
+        access: 'accessible-for-notify',
+        status,
+        description: this.cleanDescription(description),
+        kind: 'notification',
+        module: moduleName,
+        parentId: null,
+        children: [],
+        isTable: false,
+        indexColumns: []
+      }
+
+      nodes.push(node)
+    }
+
+    return nodes
+  }
+
+  /**
+   * Extract a field value from a MIB definition body
+   */
+  private extractField(body: string, fieldName: string): string | null {
+    const regex = new RegExp(`${fieldName}\\s+("?)([^"\\n]*(?:\\n[^"\\n]*)*?)\\1`, 'i')
+    const match = body.match(regex)
+    if (!match) return null
+
+    let value = match[2].trim()
+    // Handle multi-line quoted strings
+    value = value.replace(/\s*\n\s*/g, ' ')
+    return value
+  }
+
+  /**
+   * Extract MAX-ACCESS or ACCESS field
+   */
+  private extractAccess(body: string): MibAccess {
+    const accessMatch = body.match(/(?:MAX-ACCESS|ACCESS)\s+(\S+)/i)
+    if (!accessMatch) return 'not-accessible'
+
+    const access = accessMatch[1].toLowerCase()
+    const validAccess: MibAccess[] = [
+      'not-accessible', 'accessible-for-notify', 'read-only', 'read-write', 'read-create'
+    ]
+    return validAccess.includes(access as MibAccess) ? access as MibAccess : 'not-accessible'
+  }
+
+  /**
+   * Extract STATUS field
+   */
+  private extractStatus(body: string): MibStatus {
+    const statusMatch = body.match(/STATUS\s+(\S+)/i)
+    if (!statusMatch) return 'current'
+
+    const status = statusMatch[1].toLowerCase()
+    const validStatus: MibStatus[] = ['current', 'deprecated', 'obsolete']
+    return validStatus.includes(status as MibStatus) ? status as MibStatus : 'current'
+  }
+
+  /**
+   * Determine node kind from syntax and access
+   */
+  private determineKind(syntax: string, access: MibAccess): MibNodeKind {
+    if (syntax.includes('SEQUENCE OF')) return 'table'
+    if (syntax === 'SEQUENCE' || syntax.includes('SEQUENCE {')) return 'entry'
+    if (access === 'not-accessible' && !syntax.includes('SEQUENCE')) return 'column'
+    return 'scalar'
+  }
+
+  /**
+   * Extract INDEX columns from table entry definition
+   */
+  private extractIndexColumns(body: string): string[] {
+    const indexMatch = body.match(/INDEX\s*\{([^}]+)\}/i)
+    if (!indexMatch) return []
+
+    return indexMatch[1].split(',').map(s => s.trim()).filter(s => s.length > 0)
+  }
+
+  /**
+   * Clean up description text
+   */
+  private cleanDescription(desc: string): string {
+    return desc
+      .replace(/\s+/g, ' ')
+      .replace(/--/g, '')
+      .trim()
+  }
+}
+
+/**
+ * Resolve OID paths by building a tree from parsed MIB modules.
+ * This builds the standard MIB tree structure with iso(1).org(3).dod(6).internet(1) as root.
+ */
+export function buildMibTree(modules: MibModule[]): MibNode[] {
+  // Create a map of all nodes by name
+  const nodeMap = new Map<string, MibNode>()
+  const allNodes: MibNode[] = []
+
+  // First, create the standard root structure
+  const rootNodes = createStandardRootNodes()
+  for (const node of rootNodes) {
+    nodeMap.set(node.name, node)
+    allNodes.push(node)
+  }
+
+  // Add all parsed nodes to the map
+  for (const module of modules) {
+    for (const node of module.nodes) {
+      nodeMap.set(node.name, node)
+      allNodes.push(node)
+    }
+  }
+
+  // Build parent-child relationships based on common patterns
+  buildRelationships(allNodes, nodeMap)
+
+  return allNodes
+}
+
+/**
+ * Create the standard MIB root tree nodes
+ */
+function createStandardRootNodes(): MibNode[] {
+  let idCounter = 10000
+
+  const createNode = (
+    name: string, oid: number[], syntax: string, access: MibAccess,
+    description: string, kind: MibNodeKind
+  ): MibNode => ({
+    id: `root-${idCounter++}`,
+    name,
+    oid,
+    oidString: oid.join('.'),
+    syntax,
+    access,
+    status: 'current',
+    description,
+    kind,
+    module: 'RFC',
+    parentId: null,
+    children: [],
+    isTable: false,
+    indexColumns: []
+  })
+
+  return [
+    createNode('iso', [1], 'OBJECT-IDENTITY', 'not-accessible', 'ISO root', 'root'),
+    createNode('org', [1, 3], 'OBJECT-IDENTITY', 'not-accessible', 'ISO organization', 'root'),
+    createNode('dod', [1, 3, 6], 'OBJECT-IDENTITY', 'not-accessible', 'US Department of Defense', 'root'),
+    createNode('internet', [1, 3, 6, 1], 'OBJECT-IDENTITY', 'not-accessible', 'Internet OID tree root', 'root'),
+    createNode('mgmt', [1, 3, 6, 1, 2], 'OBJECT-IDENTITY', 'not-accessible', 'Management OID subtree', 'root'),
+    createNode('mib-2', [1, 3, 6, 1, 2, 1], 'OBJECT-IDENTITY', 'not-accessible', 'MIB-2 subtree', 'root'),
+    createNode('private', [1, 3, 6, 1, 4], 'OBJECT-IDENTITY', 'not-accessible', 'Private enterprise OID subtree', 'root'),
+    createNode('enterprises', [1, 3, 6, 1, 4, 1], 'OBJECT-IDENTITY', 'not-accessible', 'Enterprise-specific OID subtree', 'root'),
+    createNode('experimental', [1, 3, 6, 1, 3], 'OBJECT-IDENTITY', 'not-accessible', 'Experimental OID subtree', 'root'),
+  ]
+}
+
+/**
+ * Build parent-child relationships between nodes
+ */
+function buildRelationships(nodes: MibNode[], nodeMap: Map<string, MibNode>): void {
+  // Try to resolve OID paths from the ::= { parent child } definitions
+  // For now, we set up the known standard relationships
+
+  const standardRelationships: Record<string, string[]> = {
+    'iso': ['org'],
+    'org': ['dod'],
+    'dod': ['internet'],
+    'internet': ['mgmt', 'private', 'experimental'],
+    'mgmt': ['mib-2'],
+    'mib-2': ['system', 'interfaces', 'at', 'ip', 'icmp', 'tcp', 'udp', 'egp', 'snmp'],
+  }
+
+  for (const [parentName, childNames] of Object.entries(standardRelationships)) {
+    const parent = nodeMap.get(parentName)
+    if (!parent) continue
+
+    for (const childName of childNames) {
+      const child = nodeMap.get(childName)
+      if (!child) continue
+      child.parentId = parent.id
+      parent.children.push(child.id)
+    }
+  }
+}
