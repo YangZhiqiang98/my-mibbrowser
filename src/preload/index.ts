@@ -11,7 +11,9 @@ const api = {
     openFiles: (): Promise<MibParseResult> => ipcRenderer.invoke('mib:open-files'),
     openDirectory: (): Promise<MibParseResult> => ipcRenderer.invoke('mib:open-directory'),
     getTree: (): Promise<MibNode[]> => ipcRenderer.invoke('mib:get-tree'),
-    search: (query: string): Promise<MibNode[]> => ipcRenderer.invoke('mib:search', query)
+    search: (query: string): Promise<MibNode[]> => ipcRenderer.invoke('mib:search', query),
+    loadContent: (contents: Array<{ name: string; content: string }>): Promise<MibParseResult> =>
+      ipcRenderer.invoke('mib:load-content', contents)
   },
 
   // SNMP operations

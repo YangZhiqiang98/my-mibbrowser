@@ -45,6 +45,8 @@ export interface MibNode {
   isTable: boolean
   /** INDEX columns for table entries */
   indexColumns: string[]
+  /** Raw OID definition from MIB file, e.g. "system 1" from ::= { system 1 } */
+  oidDef: string
 }
 
 /**

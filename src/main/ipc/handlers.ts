@@ -1,17 +1,18 @@
 import { ipcMain, dialog, BrowserWindow } from 'electron'
 import type { IpcMainInvokeEvent } from 'electron'
-import { MibParser, buildMibTree } from '../mib/parser'
-import type { MibParseResult, MibNode } from '../mib/types'
+import { MibParser, buildMibTree, resolveOidToName } from '../mib/parser'
+import type { MibParseResult, MibNode, MibModule } from '../mib/types'
 import { snmpGet, snmpGetNext, snmpGetBulk, snmpSet, snmpWalk, snmpBulkWalk } from '../snmp/client'
-import type { SnmpConfig, SnmpResult, SnmpSetValue } from '../snmp/types'
+import type { SnmpConfig, SnmpResult, SnmpSetValue, SnmpVarbind } from '../snmp/types'
 import { readFileSync, writeFileSync, existsSync } from 'fs'
 import { join } from 'path'
 import { app } from 'electron'
 
 const mibParser = new MibParser()
 
-// In-memory MIB tree state
+// In-memory MIB tree state - persists across loads for incremental building
 let mibNodes: MibNode[] = []
+let accumulatedModules: MibModule[] = []
 
 /**
  * Register all IPC handlers for main process
@@ -22,6 +23,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('mib:open-directory', handleOpenMibDirectory)
   ipcMain.handle('mib:get-tree', handleGetMibTree)
   ipcMain.handle('mib:search', handleSearchMib)
+  ipcMain.handle('mib:load-content', handleLoadMibContent)
 
   // SNMP operations
   ipcMain.handle('snmp:get', handleSnmpGet)
@@ -42,7 +44,8 @@ export function registerIpcHandlers(): void {
 }
 
 /**
- * Open file dialog to select MIB files and parse them
+ * Open file dialog to select MIB files and parse them.
+ * Merges with previously loaded MIB modules for incremental building.
  */
 async function handleOpenMibFiles(): Promise<MibParseResult> {
   const window = BrowserWindow.getFocusedWindow()
@@ -64,14 +67,16 @@ async function handleOpenMibFiles(): Promise<MibParseResult> {
   }
 
   const parseResult = mibParser.parseFiles(result.filePaths)
-  const tree = buildMibTree(parseResult.modules)
+  accumulatedModules = [...accumulatedModules, ...parseResult.modules]
+  const tree = buildMibTree(accumulatedModules)
   mibNodes = tree
 
   return parseResult
 }
 
 /**
- * Open directory dialog to select MIB directory
+ * Open directory dialog to select MIB directory.
+ * Merges with previously loaded MIB modules for incremental building.
  */
 async function handleOpenMibDirectory(): Promise<MibParseResult> {
   const window = BrowserWindow.getFocusedWindow()
@@ -89,7 +94,24 @@ async function handleOpenMibDirectory(): Promise<MibParseResult> {
   }
 
   const parseResult = mibParser.parseDirectory(result.filePaths[0])
-  const tree = buildMibTree(parseResult.modules)
+  accumulatedModules = [...accumulatedModules, ...parseResult.modules]
+  const tree = buildMibTree(accumulatedModules)
+  mibNodes = tree
+
+  return parseResult
+}
+
+/**
+ * Load MIB content from text strings (used for drag-and-drop from renderer).
+ * The renderer reads file content via FileReader and sends it here.
+ */
+function handleLoadMibContent(
+  _event: IpcMainInvokeEvent,
+  contents: Array<{ name: string; content: string }>
+): MibParseResult {
+  const parseResult = mibParser.parseFileContents(contents)
+  accumulatedModules = [...accumulatedModules, ...parseResult.modules]
+  const tree = buildMibTree(accumulatedModules)
   mibNodes = tree
 
   return parseResult
@@ -116,17 +138,41 @@ function handleSearchMib(_event: IpcMainInvokeEvent, query: string): MibNode[] {
 }
 
 /**
+ * Resolve OID names in SNMP varbinds using the current MIB tree
+ */
+function resolveVarbindNames(varbinds: SnmpVarbind[]): SnmpVarbind[] {
+  return varbinds.map(vb => ({
+    ...vb,
+    name: resolveOidToName(vb.oid, mibNodes)
+  }))
+}
+
+/**
  * Execute SNMP GET
  */
 async function handleSnmpGet(_event: IpcMainInvokeEvent, config: SnmpConfig, oids: string[]): Promise<SnmpResult> {
-  return snmpGet(config, oids)
+  const result = await snmpGet(config, oids)
+  if (result.success) {
+    return {
+      ...result,
+      varbinds: resolveVarbindNames(result.varbinds)
+    }
+  }
+  return result
 }
 
 /**
  * Execute SNMP GETNEXT
  */
 async function handleSnmpGetNext(_event: IpcMainInvokeEvent, config: SnmpConfig, oids: string[]): Promise<SnmpResult> {
-  return snmpGetNext(config, oids)
+  const result = await snmpGetNext(config, oids)
+  if (result.success) {
+    return {
+      ...result,
+      varbinds: resolveVarbindNames(result.varbinds)
+    }
+  }
+  return result
 }
 
 /**
@@ -136,21 +182,42 @@ async function handleSnmpGetBulk(
   _event: IpcMainInvokeEvent, config: SnmpConfig, oids: string[],
   maxRepetitions?: number, nonRepeaters?: number
 ): Promise<SnmpResult> {
-  return snmpGetBulk(config, oids, maxRepetitions, nonRepeaters)
+  const result = await snmpGetBulk(config, oids, maxRepetitions, nonRepeaters)
+  if (result.success) {
+    return {
+      ...result,
+      varbinds: resolveVarbindNames(result.varbinds)
+    }
+  }
+  return result
 }
 
 /**
  * Execute SNMP SET
  */
 async function handleSnmpSet(_event: IpcMainInvokeEvent, config: SnmpConfig, values: SnmpSetValue[]): Promise<SnmpResult> {
-  return snmpSet(config, values)
+  const result = await snmpSet(config, values)
+  if (result.success) {
+    return {
+      ...result,
+      varbinds: resolveVarbindNames(result.varbinds)
+    }
+  }
+  return result
 }
 
 /**
  * Execute SNMP WALK
  */
 async function handleSnmpWalk(_event: IpcMainInvokeEvent, config: SnmpConfig, oid: string): Promise<SnmpResult> {
-  return snmpWalk(config, oid)
+  const result = await snmpWalk(config, oid)
+  if (result.success) {
+    return {
+      ...result,
+      varbinds: resolveVarbindNames(result.varbinds)
+    }
+  }
+  return result
 }
 
 /**
@@ -159,7 +226,14 @@ async function handleSnmpWalk(_event: IpcMainInvokeEvent, config: SnmpConfig, oi
 async function handleSnmpBulkWalk(
   _event: IpcMainInvokeEvent, config: SnmpConfig, oid: string, maxRepetitions?: number
 ): Promise<SnmpResult> {
-  return snmpBulkWalk(config, oid, maxRepetitions)
+  const result = await snmpBulkWalk(config, oid, maxRepetitions)
+  if (result.success) {
+    return {
+      ...result,
+      varbinds: resolveVarbindNames(result.varbinds)
+    }
+  }
+  return result
 }
 
 /**

@@ -9,6 +9,7 @@ declare global {
         openDirectory: () => Promise<MibParseResult>
         getTree: () => Promise<MibNode[]>
         search: (query: string) => Promise<MibNode[]>
+        loadContent: (contents: Array<{ name: string; content: string }>) => Promise<MibParseResult>
       }
       snmp: {
         get: (config: SnmpConfig, oids: string[]) => Promise<SnmpResult>

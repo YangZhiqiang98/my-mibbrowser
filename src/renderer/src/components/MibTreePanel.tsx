@@ -109,10 +109,57 @@ export function MibTreePanel(): React.ReactElement {
     e.stopPropagation()
     setIsDragOver(false)
 
-    // Note: File drop handling would need to be implemented via IPC
-    // For now, show a message directing users to use the button
-    message.info('Please use the "Open Files" button to load MIB files')
-  }, [])
+    const files = Array.from(e.dataTransfer.files).filter(
+      (f) => {
+        const ext = f.name.split('.').pop()?.toLowerCase() ?? ''
+        return ['my', 'mib', 'txt'].includes(ext)
+      }
+    )
+
+    if (files.length === 0) {
+      message.warning('No valid MIB files found. Supported extensions: .my, .mib, .txt')
+      return
+    }
+
+    setStatusMessage(`Loading ${files.length} dropped MIB file(s)...`)
+
+    // Read file contents in the renderer via FileReader, then send to main process
+    const readPromises = files.map(
+      (file) =>
+        new Promise<{ name: string; content: string }>((resolve, reject) => {
+          const reader = new FileReader()
+          reader.onload = () => {
+            resolve({ name: file.name, content: reader.result as string })
+          }
+          reader.onerror = () => reject(new Error(`Failed to read ${file.name}`))
+          reader.readAsText(file)
+        })
+    )
+
+    try {
+      const fileContents = await Promise.all(readPromises)
+      const result = await window.api.mib.loadContent(fileContents)
+
+      if (result.errors.length > 0) {
+        message.error(`Parse errors: ${result.errors.map((e: { message: string }) => e.message).join('; ')}`)
+      }
+      if (result.modules.length > 0) {
+        const nodes = await window.api.mib.getTree()
+        const tree = buildTreeFromNodes(nodes)
+        setMibTree(tree)
+        for (const mod of result.modules) {
+          addLoadedModule(mod.name)
+        }
+        message.success(`Loaded ${result.modules.length} MIB module(s) from dropped files`)
+        setStatusMessage(`Loaded ${result.modules.length} module(s)`)
+      } else if (result.errors.length === 0) {
+        setStatusMessage('Ready')
+      }
+    } catch {
+      message.error('Failed to read dropped files')
+      setStatusMessage('Ready')
+    }
+  }, [setMibTree, addLoadedModule, setStatusMessage])
 
   return (
     <div

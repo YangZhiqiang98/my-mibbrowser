@@ -43,6 +43,36 @@ export class MibParser {
   }
 
   /**
+   * Parse MIB files from text content (used for drag-and-drop from renderer).
+   * Accepts an array of { name, content } objects.
+   */
+  parseFileContents(fileContents: Array<{ name: string; content: string }>): MibParseResult {
+    this.modules = []
+    this.errors = []
+    this.warnings = []
+    this.nodeIdCounter = 0
+
+    for (const file of fileContents) {
+      try {
+        this.parseModule(file.content, file.name)
+      } catch (err) {
+        this.errors.push({
+          line: 0,
+          column: 0,
+          message: `Failed to parse ${file.name}: ${err instanceof Error ? err.message : String(err)}`,
+          severity: 'error'
+        })
+      }
+    }
+
+    return {
+      modules: this.modules,
+      errors: this.errors,
+      warnings: this.warnings
+    }
+  }
+
+  /**
    * Parse all MIB files in a directory
    */
   parseDirectory(dirPath: string): MibParseResult {
@@ -66,7 +96,6 @@ export class MibParser {
    * Parse a single MIB module from text content
    */
   private parseModule(content: string, fileName: string): void {
-    const lines = content.split('\n')
     const moduleName = this.extractModuleName(content, fileName)
 
     const module: MibModule = {
@@ -192,7 +221,8 @@ export class MibParser {
         parentId: null,
         children: [],
         isTable: syntax.includes('SEQUENCE OF') || syntax.includes('SEQUENCE'),
-        indexColumns: this.extractIndexColumns(body)
+        indexColumns: this.extractIndexColumns(body),
+        oidDef
       }
 
       nodes.push(node)
@@ -214,6 +244,7 @@ export class MibParser {
       const body = match[2]
       const description = this.extractField(body, 'DESCRIPTION') || ''
       const status = this.extractStatus(body)
+      const oidDef = match[3].trim()
 
       const node: MibNode = {
         id: `node-${++this.nodeIdCounter}`,
@@ -229,7 +260,8 @@ export class MibParser {
         parentId: null,
         children: [],
         isTable: false,
-        indexColumns: []
+        indexColumns: [],
+        oidDef
       }
 
       nodes.push(node)
@@ -251,6 +283,7 @@ export class MibParser {
       const body = match[2]
       const description = this.extractField(body, 'DESCRIPTION') || ''
       const status = this.extractStatus(body)
+      const oidDef = match[3].trim()
 
       const node: MibNode = {
         id: `node-${++this.nodeIdCounter}`,
@@ -266,7 +299,8 @@ export class MibParser {
         parentId: null,
         children: [],
         isTable: false,
-        indexColumns: []
+        indexColumns: [],
+        oidDef
       }
 
       nodes.push(node)
@@ -365,12 +399,15 @@ export function buildMibTree(modules: MibModule[]): MibNode[] {
   // Add all parsed nodes to the map
   for (const module of modules) {
     for (const node of module.nodes) {
-      nodeMap.set(node.name, node)
+      // Handle duplicate node names: skip if already present (first definition wins)
+      if (!nodeMap.has(node.name)) {
+        nodeMap.set(node.name, node)
+      }
       allNodes.push(node)
     }
   }
 
-  // Build parent-child relationships based on common patterns
+  // Build parent-child relationships and resolve OID paths
   buildRelationships(allNodes, nodeMap)
 
   return allNodes
@@ -384,7 +421,7 @@ function createStandardRootNodes(): MibNode[] {
 
   const createNode = (
     name: string, oid: number[], syntax: string, access: MibAccess,
-    description: string, kind: MibNodeKind
+    description: string, kind: MibNodeKind, oidDef: string
   ): MibNode => ({
     id: `root-${idCounter++}`,
     name,
@@ -399,47 +436,204 @@ function createStandardRootNodes(): MibNode[] {
     parentId: null,
     children: [],
     isTable: false,
-    indexColumns: []
+    indexColumns: [],
+    oidDef
   })
 
   return [
-    createNode('iso', [1], 'OBJECT-IDENTITY', 'not-accessible', 'ISO root', 'root'),
-    createNode('org', [1, 3], 'OBJECT-IDENTITY', 'not-accessible', 'ISO organization', 'root'),
-    createNode('dod', [1, 3, 6], 'OBJECT-IDENTITY', 'not-accessible', 'US Department of Defense', 'root'),
-    createNode('internet', [1, 3, 6, 1], 'OBJECT-IDENTITY', 'not-accessible', 'Internet OID tree root', 'root'),
-    createNode('mgmt', [1, 3, 6, 1, 2], 'OBJECT-IDENTITY', 'not-accessible', 'Management OID subtree', 'root'),
-    createNode('mib-2', [1, 3, 6, 1, 2, 1], 'OBJECT-IDENTITY', 'not-accessible', 'MIB-2 subtree', 'root'),
-    createNode('private', [1, 3, 6, 1, 4], 'OBJECT-IDENTITY', 'not-accessible', 'Private enterprise OID subtree', 'root'),
-    createNode('enterprises', [1, 3, 6, 1, 4, 1], 'OBJECT-IDENTITY', 'not-accessible', 'Enterprise-specific OID subtree', 'root'),
-    createNode('experimental', [1, 3, 6, 1, 3], 'OBJECT-IDENTITY', 'not-accessible', 'Experimental OID subtree', 'root'),
+    createNode('iso', [1], 'OBJECT-IDENTITY', 'not-accessible', 'ISO root', 'root', ''),
+    createNode('org', [1, 3], 'OBJECT-IDENTITY', 'not-accessible', 'ISO organization', 'root', '{ iso 3 }'),
+    createNode('dod', [1, 3, 6], 'OBJECT-IDENTITY', 'not-accessible', 'US Department of Defense', 'root', '{ org 6 }'),
+    createNode('internet', [1, 3, 6, 1], 'OBJECT-IDENTITY', 'not-accessible', 'Internet OID tree root', 'root', '{ dod 1 }'),
+    createNode('mgmt', [1, 3, 6, 1, 2], 'OBJECT-IDENTITY', 'not-accessible', 'Management OID subtree', 'root', '{ internet 2 }'),
+    createNode('mib-2', [1, 3, 6, 1, 2, 1], 'OBJECT-IDENTITY', 'not-accessible', 'MIB-2 subtree', 'root', '{ mgmt 1 }'),
+    createNode('private', [1, 3, 6, 1, 4], 'OBJECT-IDENTITY', 'not-accessible', 'Private enterprise OID subtree', 'root', '{ internet 4 }'),
+    createNode('enterprises', [1, 3, 6, 1, 4, 1], 'OBJECT-IDENTITY', 'not-accessible', 'Enterprise-specific OID subtree', 'root', '{ private 1 }'),
+    createNode('experimental', [1, 3, 6, 1, 3], 'OBJECT-IDENTITY', 'not-accessible', 'Experimental OID subtree', 'root', '{ internet 3 }'),
   ]
 }
 
 /**
- * Build parent-child relationships between nodes
+ * Parse the ::= { parentName childNumber } definition into parent name and child number.
+ * Handles forms like:
+ *   "system 1"          -> { parentName: "system", childNumber: 1 }
+ *   "enterprises 1234"  -> { parentName: "enterprises", childNumber: 1234 }
+ *   "mgmt 1"            -> { parentName: "mgmt", childNumber: 1 }
  */
-function buildRelationships(nodes: MibNode[], nodeMap: Map<string, MibNode>): void {
-  // Try to resolve OID paths from the ::= { parent child } definitions
-  // For now, we set up the known standard relationships
+function parseOidDef(oidDef: string): { parentName: string; childNumber: number } | null {
+  const trimmed = oidDef.trim()
+  if (!trimmed) return null
 
-  const standardRelationships: Record<string, string[]> = {
-    'iso': ['org'],
-    'org': ['dod'],
-    'dod': ['internet'],
-    'internet': ['mgmt', 'private', 'experimental'],
-    'mgmt': ['mib-2'],
-    'mib-2': ['system', 'interfaces', 'at', 'ip', 'icmp', 'tcp', 'udp', 'egp', 'snmp'],
-  }
-
-  for (const [parentName, childNames] of Object.entries(standardRelationships)) {
-    const parent = nodeMap.get(parentName)
-    if (!parent) continue
-
-    for (const childName of childNames) {
-      const child = nodeMap.get(childName)
-      if (!child) continue
-      child.parentId = parent.id
-      parent.children.push(child.id)
+  // Match patterns like "parentName childNumber"
+  // Also handle forms with extra whitespace or multiple segments like "iso(1) org(3) dod(6)"
+  const simpleMatch = trimmed.match(/^(\S+)\s+(\d+)$/)
+  if (simpleMatch) {
+    return {
+      parentName: simpleMatch[1],
+      childNumber: parseInt(simpleMatch[2], 10)
     }
   }
+
+  return null
+}
+
+/**
+ * Build parent-child relationships between nodes and resolve OID paths.
+ *
+ * For each node that has an oidDef like "system 1", we:
+ * 1. Parse the parent name and child number
+ * 2. Look up the parent in the nodeMap
+ * 3. Walk up the parent chain to build the full OID path
+ * 4. Set parentId and update parent's children array
+ */
+function buildRelationships(nodes: MibNode[], nodeMap: Map<string, MibNode>): void {
+  // First pass: parse oidDef and set parentId for all nodes
+  for (const node of nodes) {
+    if (!node.oidDef) continue
+
+    const parsed = parseOidDef(node.oidDef)
+    if (!parsed) continue
+
+    const { parentName, childNumber } = parsed
+    const parent = nodeMap.get(parentName)
+
+    if (!parent) {
+      // Parent not found yet (may be in a not-yet-loaded MIB file) - skip for now
+      continue
+    }
+
+    // Set the parent relationship
+    node.parentId = parent.id
+
+    // Add this node to parent's children if not already present
+    if (!parent.children.includes(node.id)) {
+      parent.children = [...parent.children, node.id]
+    }
+
+    // Resolve OID by walking up the parent chain
+    // Only resolve if the parent already has a resolved OID
+    if (parent.oid.length > 0) {
+      node.oid = [...parent.oid, childNumber]
+      node.oidString = node.oid.join('.')
+    }
+  }
+
+  // Second pass: resolve OIDs for nodes whose parents were resolved in the first pass
+  // This handles chains like: mib-2 -> system -> sysDescr where system was parsed from MIB
+  let changed = true
+  let iterations = 0
+  const maxIterations = 10 // Prevent infinite loops
+
+  while (changed && iterations < maxIterations) {
+    changed = false
+    iterations++
+
+    for (const node of nodes) {
+      // Skip nodes that already have a resolved OID
+      if (node.oid.length > 0) continue
+      if (!node.oidDef) continue
+
+      const parsed = parseOidDef(node.oidDef)
+      if (!parsed) continue
+
+      const { parentName, childNumber } = parsed
+
+      // Look up parent - check nodeMap first, then search by name
+      let parent = nodeMap.get(parentName)
+      if (!parent) {
+        // Try to find parent among all nodes (handles duplicates)
+        parent = nodes.find(n => n.name === parentName && n.oid.length > 0)
+      }
+
+      if (!parent || parent.oid.length === 0) continue
+
+      // Set parent relationship
+      if (node.parentId !== parent.id) {
+        node.parentId = parent.id
+        if (!parent.children.includes(node.id)) {
+          parent.children = [...parent.children, node.id]
+        }
+      }
+
+      // Resolve OID
+      node.oid = [...parent.oid, childNumber]
+      node.oidString = node.oid.join('.')
+      changed = true
+    }
+  }
+}
+
+/**
+ * Check whether the OID string `oid` is exactly or is a child of `prefix`.
+ * Compares component-by-component to avoid false prefix matches like
+ * "1.3.6.1.2.1.10" being treated as a child of "1.3.6.1.2.1.1".
+ *
+ * Returns:
+ *   'exact'  — oid === prefix (component-wise)
+ *   'child'  — oid is a descendant of prefix
+ *   'none'   — no match
+ */
+function oidMatchesPrefix(oid: string, prefix: string): 'exact' | 'child' | 'none' {
+  if (oid === prefix) return 'exact'
+
+  // prefix must be shorter and oid must start with prefix + "."
+  if (oid.length <= prefix.length) return 'none'
+  if (oid[prefix.length] !== '.') return 'none'
+  if (!oid.startsWith(prefix)) return 'none'
+
+  // We also need to ensure the boundary is at a component boundary, not
+  // mid-number. Since prefix is a valid OID string ending with a digit,
+  // and we checked oid[prefix.length] === '.', the boundary is clean.
+  return 'child'
+}
+
+/**
+ * Count the number of dot-separated components in an OID string.
+ */
+function oidComponentCount(oidStr: string): number {
+  if (!oidStr) return 0
+  return oidStr.split('.').length
+}
+
+/**
+ * Resolve a numeric OID string to its symbolic name using the MIB node list.
+ * Finds the longest matching OID prefix among known MIB nodes, then appends
+ * the remaining instance identifier suffix.
+ *
+ * Uses component count rather than string length to determine the longest
+ * match, avoiding false matches like "1.3.6.1.2.1.1" appearing to be a
+ * prefix of "1.3.6.1.2.1.10.x".
+ *
+ * E.g. "1.3.6.1.2.1.1.1.0" -> "sysDescr.0"
+ *      "1.3.6.1.2.1.2.2.1.1.1" -> "ifIndex.1"
+ */
+export function resolveOidToName(oid: string, nodes: MibNode[]): string {
+  if (!oid || nodes.length === 0) return oid
+
+  let bestMatch: MibNode | null = null
+  let bestMatchComponents = 0
+
+  for (const node of nodes) {
+    if (!node.oidString || node.oidString.length === 0) continue
+
+    const matchType = oidMatchesPrefix(oid, node.oidString)
+    if (matchType === 'none') continue
+
+    const components = oidComponentCount(node.oidString)
+    if (components > bestMatchComponents) {
+      bestMatch = node
+      bestMatchComponents = components
+    }
+  }
+
+  if (!bestMatch) return oid
+
+  // If exact match, return just the name
+  if (oid === bestMatch.oidString) {
+    return bestMatch.name
+  }
+
+  // Otherwise append the instance suffix (skip the dot after bestMatch.oidString)
+  const suffix = oid.substring(bestMatch.oidString.length + 1)
+  return `${bestMatch.name}.${suffix}`
 }
