@@ -1,0 +1,4 @@
+{"file": "prd.md", "description": "验收标准和需求清单，用于检查实现是否符合要求"}
+{"file": "research/mgsoft-features.md", "description": "MGSOFT 功能参考，用于检查界面和交互是否符合预期"}
+{"file": "research/snmp-libraries.md", "description": "SNMP 库特性，用于检查协议支持是否完整"}
+{"file": "research/mib-parsing.md", "description": "MIB 解析规范，用于检查文件解析是否正确"}
