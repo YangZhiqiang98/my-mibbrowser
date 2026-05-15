@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from 'react'
+import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import { Input, Button, Tooltip, message, Tree, Dropdown, Tag } from 'antd'
 import type { MenuProps } from 'antd'
 import {
@@ -54,15 +54,83 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
   const [searchText, setSearchText] = useState('')
   const [expandedKeys, setExpandedKeys] = useState<string[]>([])
   const [isDragOver, setIsDragOver] = useState(false)
+  const [searchMatchIds, setSearchMatchIds] = useState<string[]>([])
+  const [currentMatchIndex, setCurrentMatchIndex] = useState(0)
+  const treeRef = useRef<{ scrollTo: (info: { key: string }) => void } | null>(null)
 
-  // Filter MIB tree based on search, then convert to antd DataNode format
-  const filteredTreeData = useMemo(() => {
+  // When search text changes, find all matching nodes and their ancestors
+  useEffect(() => {
     const lowerSearch = searchText.trim().toLowerCase()
-    const filtered = lowerSearch
-      ? filterMibTree(mibTree, lowerSearch)
-      : mibTree
-    return filtered.map((node) => convertToDataNode(node, searchText))
-  }, [mibTree, searchText])
+    if (!lowerSearch) {
+      setSearchMatchIds([])
+      setCurrentMatchIndex(0)
+      return
+    }
+
+    const matchIds: string[] = []
+    const ancestorIds = new Set<string>()
+
+    function collectMatches(nodes: MibTreeNodeData[], ancestors: string[]) {
+      for (const node of nodes) {
+        const isMatch = node.name.toLowerCase().includes(lowerSearch) ||
+          node.oid.toLowerCase().includes(lowerSearch)
+        if (isMatch) {
+          matchIds.push(node.id)
+          for (const a of ancestors) ancestorIds.add(a)
+        }
+        collectMatches(node.children, [...ancestors, node.id])
+      }
+    }
+    collectMatches(mibTree, [])
+
+    setSearchMatchIds(matchIds)
+    setCurrentMatchIndex(0)
+
+    // Expand ancestors of all matches
+    if (matchIds.length > 0) {
+      setExpandedKeys(prev => [...new Set([...prev, ...ancestorIds])])
+    }
+  }, [searchText, mibTree])
+
+  // Scroll to current match when cycling through results
+  useEffect(() => {
+    if (searchMatchIds.length === 0) return
+    const matchId = searchMatchIds[currentMatchIndex]
+    if (!matchId) return
+
+    // Expand ancestors of the current match
+    const ancestors = findAncestorIds(mibTree, matchId)
+    if (ancestors.length > 0) {
+      setExpandedKeys(prev => [...new Set([...prev, ...ancestors])])
+    }
+
+    // Scroll to the match node after a short delay to let tree expand
+    const rafId = requestAnimationFrame(() => {
+      treeRef.current?.scrollTo({ key: matchId })
+    })
+    return () => cancelAnimationFrame(rafId)
+  }, [currentMatchIndex, searchMatchIds])
+
+  // Handle Enter key in search input to cycle through matches
+  const handleSearchKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (searchMatchIds.length === 0) return
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      if (e.shiftKey) {
+        // Previous match
+        setCurrentMatchIndex(prev => (prev - 1 + searchMatchIds.length) % searchMatchIds.length)
+      } else {
+        // Next match
+        setCurrentMatchIndex(prev => (prev + 1) % searchMatchIds.length)
+      }
+    }
+  }, [searchMatchIds.length])
+
+  // Always convert the full mibTree to DataNode format (no filtering)
+  const searchMatchSet = useMemo(() => new Set(searchMatchIds), [searchMatchIds])
+  const filteredTreeData = useMemo(() => {
+    return mibTree.map((node) => convertToDataNode(node, searchMatchSet))
+  }, [mibTree, searchMatchSet])
 
   const handleOpenFiles = useCallback(async () => {
     setStatusMessage('Loading MIB files...')
@@ -407,13 +475,19 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
 
       <div className="mib-tree-search">
         <Input
-          placeholder="Search by name or OID"
+          placeholder="Search by name or OID (Enter=next, Shift+Enter=prev)"
           prefix={<SearchOutlined />}
           value={searchText}
           onChange={(e) => setSearchText(e.target.value)}
+          onKeyDown={handleSearchKeyDown}
           size="small"
           allowClear
         />
+        {searchMatchIds.length > 0 && (
+          <span style={{ fontSize: 11, color: '#666', marginTop: 2, display: 'block' }}>
+            {currentMatchIndex + 1} / {searchMatchIds.length} matches
+          </span>
+        )}
       </div>
 
       <div className="mib-tree-content">
@@ -424,6 +498,7 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
           >
             <div>
               <Tree
+                ref={treeRef as never}
                 treeData={filteredTreeData}
                 expandedKeys={expandedKeys}
                 onExpand={(keys) => setExpandedKeys(keys as string[])}
@@ -432,6 +507,7 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
                 onRightClick={handleRightClick}
                 showIcon
                 blockNode
+                autoExpandParent={false}
                 style={{ background: 'transparent' }}
               />
             </div>
@@ -492,12 +568,9 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
 /**
  * Convert MibTreeNodeData to antd DataNode
  */
-function convertToDataNode(node: MibTreeNodeData, searchText: string): DataNode {
+function convertToDataNode(node: MibTreeNodeData, searchMatchSet: Set<string>): DataNode {
   const icon = getNodeIcon(node.kind)
-  const isMatch = searchText && (
-    node.name.toLowerCase().includes(searchText.toLowerCase()) ||
-    node.oid.includes(searchText)
-  )
+  const isMatch = searchMatchSet.has(node.id)
 
   return {
     key: node.id,
@@ -511,7 +584,7 @@ function convertToDataNode(node: MibTreeNodeData, searchText: string): DataNode 
       </span>
     ),
     icon: <span className={`mib-node-icon mib-node-${node.kind}`}>{icon}</span>,
-    children: node.children.map((child) => convertToDataNode(child, searchText)),
+    children: node.children.map((child) => convertToDataNode(child, searchMatchSet)),
     isLeaf: node.children.length === 0
   }
 }
@@ -534,23 +607,15 @@ function getNodeIcon(kind: string): React.ReactNode {
 }
 
 /**
- * Filter MIB tree nodes by search text
+ * Find ancestor IDs of a node by its ID, used to expand tree to reveal a match
  */
-function filterMibTree(nodes: MibTreeNodeData[], searchText: string): MibTreeNodeData[] {
-  const result: MibTreeNodeData[] = []
+function findAncestorIds(nodes: MibTreeNodeData[], targetId: string, ancestors: string[] = []): string[] {
   for (const node of nodes) {
-    const matchesSelf = node.name.toLowerCase().includes(searchText) ||
-      node.oid.includes(searchText)
-    const filteredChildren = filterMibTree(node.children, searchText)
-
-    if (matchesSelf || filteredChildren.length > 0) {
-      result.push({
-        ...node,
-        children: filteredChildren
-      })
-    }
+    if (node.id === targetId) return ancestors
+    const found = findAncestorIds(node.children, targetId, [...ancestors, node.id])
+    if (found.length > 0) return found
   }
-  return result
+  return []
 }
 
 /**

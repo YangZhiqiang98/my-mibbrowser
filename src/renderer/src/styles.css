@@ -144,6 +144,16 @@ html, body, #root {
 .mib-node-title {
   font-size: 13px;
   user-select: none;
+  white-space: nowrap;
+}
+
+/* Allow tree content to expand horizontally for long node names */
+.mib-tree-content .ant-tree {
+  min-width: max-content;
+}
+
+.mib-tree-content .ant-tree-list {
+  min-width: max-content;
 }
 
 /* Right panel */

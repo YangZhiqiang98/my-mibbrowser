@@ -62,8 +62,21 @@ export function buildTreeFromNodes(nodes: RawMibNode[]): MibTreeNodeData[] {
     }
   }
 
-  // Build tree structure
-  const roots = nodes.filter(n => !n.parentId || !nodeMap.has(n.parentId))
+  // Deduplicate children arrays (immutable: create new node copies)
+  const dedupedNodes = nodes.map(node => ({
+    ...node,
+    children: [...new Set(node.children)]
+  }))
+  const dedupedMap = new Map(dedupedNodes.map(n => [n.id, n]))
+
+  // Build tree structure - deduplicate roots by ID
+  const rootSet = new Set<string>()
+  const roots = dedupedNodes.filter(n => {
+    if (n.parentId && dedupedMap.has(n.parentId)) return false
+    if (rootSet.has(n.id)) return false
+    rootSet.add(n.id)
+    return true
+  })
 
   function buildNode(node: RawMibNode): MibTreeNodeData {
     const resolvedOid = resolvedOids.get(node.id) || node.oidString
@@ -77,7 +90,7 @@ export function buildTreeFromNodes(nodes: RawMibNode[]): MibTreeNodeData[] {
       module: node.module,
       description: node.description,
       children: node.children
-        .map(cid => nodeMap.get(cid))
+        .map(cid => dedupedMap.get(cid))
         .filter((n): n is RawMibNode => !!n)
         .map(buildNode)
     }
