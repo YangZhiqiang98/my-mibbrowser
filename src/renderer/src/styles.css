@@ -104,71 +104,46 @@ html, body, #root {
   padding: 8px;
 }
 
-.mib-node-item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 8px;
-  cursor: pointer;
-  border-radius: 4px;
-  font-size: 13px;
-  user-select: none;
-}
-
-.mib-node-item:hover {
-  background: #e6f7ff;
-}
-
-.mib-node-item.selected {
-  background: #bae7ff;
-}
-
+/* Tree node icon colors - per node type (MG-SOFT style) */
 .mib-node-icon {
-  width: 16px;
-  height: 16px;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 12px;
-  flex-shrink: 0;
+  font-size: 14px;
 }
 
-.mib-node-icon.scalar {
+.mib-node-scalar {
   color: #52c41a;
 }
 
-.mib-node-icon.table {
+.mib-node-table {
   color: #1890ff;
 }
 
-.mib-node-icon.entry {
+.mib-node-entry {
   color: #fa8c16;
 }
 
-.mib-node-icon.column {
+.mib-node-column {
   color: #722ed1;
 }
 
-.mib-node-icon.notification {
+.mib-node-notification {
   color: #f5222d;
 }
 
-.mib-node-icon.group,
-.mib-node-icon.root {
+.mib-node-group,
+.mib-node-root {
+  color: #faad14;
+}
+
+.mib-node-module {
   color: #8c8c8c;
 }
 
-.mib-node-name {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.mib-node-oid {
-  color: #8c8c8c;
-  font-size: 11px;
-  flex-shrink: 0;
+.mib-node-title {
+  font-size: 13px;
+  user-select: none;
 }
 
 /* Right panel */
@@ -254,37 +229,69 @@ html, body, #root {
 
 /* Node detail panel */
 .node-detail {
-  padding: 12px;
-  background: #fafafa;
   border-top: 1px solid #e8e8e8;
   font-size: 12px;
-  max-height: 200px;
+  max-height: 220px;
   overflow: auto;
+  background: #fafafa;
 }
 
-.node-detail h4 {
+.node-detail-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background: #f0f0f0;
+  border-bottom: 1px solid #e8e8e8;
+}
+
+.node-detail-icon {
+  font-size: 14px;
+  color: #1890ff;
+}
+
+.node-detail-title {
   font-size: 13px;
   font-weight: 600;
   color: #333;
-  margin-bottom: 8px;
+}
+
+.node-detail-body {
+  padding: 8px 12px;
 }
 
 .node-detail-row {
   display: flex;
   gap: 8px;
   margin-bottom: 4px;
+  line-height: 1.5;
+}
+
+.node-detail-row.node-detail-desc {
+  flex-direction: column;
+  gap: 2px;
 }
 
 .node-detail-label {
   font-weight: 500;
-  color: #666;
-  min-width: 80px;
+  color: #8c8c8c;
+  min-width: 70px;
   flex-shrink: 0;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
 }
 
 .node-detail-value {
   color: #333;
   word-break: break-all;
+  font-size: 12px;
+}
+
+.node-detail-oid {
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  color: #1890ff;
+  font-size: 12px;
 }
 
 /* Status bar */

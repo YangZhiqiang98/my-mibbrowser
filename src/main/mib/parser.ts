@@ -3,6 +3,14 @@ import { join, extname, basename } from 'path'
 import type { MibNode, MibModule, MibParseResult, MibParseError, MibAccess, MibStatus, MibNodeKind } from './types'
 
 /**
+ * Strip the IMPORTS section from MIB content to prevent imported symbols
+ * from being parsed as actual OBJECT-TYPE/OBJECT-IDENTITY definitions.
+ */
+function stripImportsSection(content: string): string {
+  return content.replace(/IMPORTS\s*[\s\S]*?;/gi, '')
+}
+
+/**
  * Simple SMI MIB file parser.
  * Handles SMIv1 and SMIv2 syntax for common MIB files.
  */
@@ -73,7 +81,7 @@ export class MibParser {
   }
 
   /**
-   * Parse all MIB files in a directory
+   * Parse all MIB files in a directory, recursively scanning subdirectories.
    */
   parseDirectory(dirPath: string): MibParseResult {
     if (!existsSync(dirPath)) {
@@ -85,9 +93,7 @@ export class MibParser {
     }
 
     const extensions = ['.my', '.mib', '.txt']
-    const files = readdirSync(dirPath)
-      .filter(f => extensions.includes(extname(f).toLowerCase()))
-      .map(f => join(dirPath, f))
+    const files = collectMibFiles(dirPath, extensions)
 
     return this.parseFiles(files)
   }
@@ -115,16 +121,20 @@ export class MibParser {
     // Parse module identity
     this.parseModuleIdentity(content, module)
 
+    // Strip IMPORTS section before parsing definitions to avoid
+    // imported symbols being parsed as actual MIB definitions
+    const contentWithoutImports = stripImportsSection(content)
+
     // Parse object type definitions
-    const objectTypes = this.parseObjectTypes(content, moduleName)
+    const objectTypes = this.parseObjectTypes(contentWithoutImports, moduleName)
     module.nodes.push(...objectTypes)
 
     // Parse object identity definitions
-    const objectIdentities = this.parseObjectIdentities(content, moduleName)
+    const objectIdentities = this.parseObjectIdentities(contentWithoutImports, moduleName)
     module.nodes.push(...objectIdentities)
 
     // Parse notification types
-    const notifications = this.parseNotificationTypes(content, moduleName)
+    const notifications = this.parseNotificationTypes(contentWithoutImports, moduleName)
     module.nodes.push(...notifications)
 
     this.modules.push(module)
@@ -442,14 +452,14 @@ function createStandardRootNodes(): MibNode[] {
 
   return [
     createNode('iso', [1], 'OBJECT-IDENTITY', 'not-accessible', 'ISO root', 'root', ''),
-    createNode('org', [1, 3], 'OBJECT-IDENTITY', 'not-accessible', 'ISO organization', 'root', '{ iso 3 }'),
-    createNode('dod', [1, 3, 6], 'OBJECT-IDENTITY', 'not-accessible', 'US Department of Defense', 'root', '{ org 6 }'),
-    createNode('internet', [1, 3, 6, 1], 'OBJECT-IDENTITY', 'not-accessible', 'Internet OID tree root', 'root', '{ dod 1 }'),
-    createNode('mgmt', [1, 3, 6, 1, 2], 'OBJECT-IDENTITY', 'not-accessible', 'Management OID subtree', 'root', '{ internet 2 }'),
-    createNode('mib-2', [1, 3, 6, 1, 2, 1], 'OBJECT-IDENTITY', 'not-accessible', 'MIB-2 subtree', 'root', '{ mgmt 1 }'),
-    createNode('private', [1, 3, 6, 1, 4], 'OBJECT-IDENTITY', 'not-accessible', 'Private enterprise OID subtree', 'root', '{ internet 4 }'),
-    createNode('enterprises', [1, 3, 6, 1, 4, 1], 'OBJECT-IDENTITY', 'not-accessible', 'Enterprise-specific OID subtree', 'root', '{ private 1 }'),
-    createNode('experimental', [1, 3, 6, 1, 3], 'OBJECT-IDENTITY', 'not-accessible', 'Experimental OID subtree', 'root', '{ internet 3 }'),
+    createNode('org', [1, 3], 'OBJECT-IDENTITY', 'not-accessible', 'ISO organization', 'root', 'iso 3'),
+    createNode('dod', [1, 3, 6], 'OBJECT-IDENTITY', 'not-accessible', 'US Department of Defense', 'root', 'org 6'),
+    createNode('internet', [1, 3, 6, 1], 'OBJECT-IDENTITY', 'not-accessible', 'Internet OID tree root', 'root', 'dod 1'),
+    createNode('mgmt', [1, 3, 6, 1, 2], 'OBJECT-IDENTITY', 'not-accessible', 'Management OID subtree', 'root', 'internet 2'),
+    createNode('mib-2', [1, 3, 6, 1, 2, 1], 'OBJECT-IDENTITY', 'not-accessible', 'MIB-2 subtree', 'root', 'mgmt 1'),
+    createNode('private', [1, 3, 6, 1, 4], 'OBJECT-IDENTITY', 'not-accessible', 'Private enterprise OID subtree', 'root', 'internet 4'),
+    createNode('enterprises', [1, 3, 6, 1, 4, 1], 'OBJECT-IDENTITY', 'not-accessible', 'Enterprise-specific OID subtree', 'root', 'private 1'),
+    createNode('experimental', [1, 3, 6, 1, 3], 'OBJECT-IDENTITY', 'not-accessible', 'Experimental OID subtree', 'root', 'internet 3'),
   ]
 }
 
@@ -461,10 +471,10 @@ function createStandardRootNodes(): MibNode[] {
  *   "mgmt 1"            -> { parentName: "mgmt", childNumber: 1 }
  */
 function parseOidDef(oidDef: string): { parentName: string; childNumber: number } | null {
-  const trimmed = oidDef.trim()
+  // Strip surrounding braces: "{ iso 3 }" → "iso 3"
+  const trimmed = oidDef.trim().replace(/^\{\s*/, '').replace(/\s*\}$/, '')
   if (!trimmed) return null
 
-  // Match patterns like "parentName childNumber"
   const simpleMatch = trimmed.match(/^(\S+)\s+(\d+)$/)
   if (simpleMatch) {
     return {
@@ -576,7 +586,7 @@ function buildRelationships(nodes: MibNode[], nodeMap: Map<string, MibNode>): vo
   // This handles chains like: mib-2 -> system -> sysDescr where system was parsed from MIB
   let changed = true
   let iterations = 0
-  const maxIterations = 10 // Prevent infinite loops
+  const maxIterations = 20 // Prevent infinite loops
 
   while (changed && iterations < maxIterations) {
     changed = false
@@ -615,6 +625,25 @@ function buildRelationships(nodes: MibNode[], nodeMap: Map<string, MibNode>): vo
       changed = true
     }
   }
+}
+
+/**
+ * Recursively collect MIB files from a directory and all subdirectories.
+ */
+function collectMibFiles(dirPath: string, extensions: string[]): string[] {
+  const results: string[] = []
+  const entries = readdirSync(dirPath, { withFileTypes: true })
+
+  for (const entry of entries) {
+    const fullPath = join(dirPath, entry.name)
+    if (entry.isDirectory()) {
+      results.push(...collectMibFiles(fullPath, extensions))
+    } else if (entry.isFile() && extensions.includes(extname(entry.name).toLowerCase())) {
+      results.push(fullPath)
+    }
+  }
+
+  return results
 }
 
 /**

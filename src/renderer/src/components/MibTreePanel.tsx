@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useMemo } from 'react'
-import { Input, Button, Tooltip, message, Tree, Dropdown } from 'antd'
+import { Input, Button, Tooltip, message, Tree, Dropdown, Tag } from 'antd'
 import type { MenuProps } from 'antd'
 import {
   SearchOutlined,
@@ -13,12 +13,26 @@ import {
   CopyOutlined,
   ExpandOutlined,
   CompressOutlined,
-  AimOutlined
+  AimOutlined,
+  SendOutlined,
+  ScissorOutlined,
+  NodeIndexOutlined,
+  SwapOutlined,
+  ReloadOutlined
 } from '@ant-design/icons'
 import type { DataNode, EventDataNode } from 'antd/es/tree'
 import { useAppStore } from '../stores/appStore'
 import type { MibTreeNodeData } from '../types'
+import type { ResultRow } from '../types'
 import { buildTreeFromNodes } from '../utils/mibTreeUtils'
+
+const ACCESS_COLOR_MAP: Record<string, string> = {
+  'read-only': 'blue',
+  'read-write': 'green',
+  'read-create': 'orange',
+  'not-accessible': 'default',
+  'accessible-for-notify': 'purple'
+}
 
 interface MibTreePanelProps {
   width: number
@@ -32,6 +46,10 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
   const setQueryOid = useAppStore((s) => s.setQueryOid)
   const addLoadedModule = useAppStore((s) => s.addLoadedModule)
   const setStatusMessage = useAppStore((s) => s.setStatusMessage)
+  const snmpConfig = useAppStore((s) => s.snmpConfig)
+  const addResults = useAppStore((s) => s.addResults)
+  const setConnectionStatus = useAppStore((s) => s.setConnectionStatus)
+  const setIsQuerying = useAppStore((s) => s.setIsQuerying)
 
   const [searchText, setSearchText] = useState('')
   const [expandedKeys, setExpandedKeys] = useState<string[]>([])
@@ -116,10 +134,124 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
     }
   }, [mibTree])
 
+  const executeSnmpOperation = useCallback(async (
+    operation: 'GET' | 'GETNEXT' | 'GETBULK' | 'WALK' | 'BULK_WALK',
+    oid: string
+  ) => {
+    if (!oid) {
+      message.warning('No OID available for this node')
+      return
+    }
+
+    setIsQuerying(true)
+    setConnectionStatus('connecting')
+    setStatusMessage(`Executing ${operation} on ${oid}...`)
+
+    try {
+      let result: {
+        success: boolean
+        varbinds: Array<{ oid: string; name?: string; value: string | number | Buffer | null; type: string; isError: boolean; error?: string }>
+        error?: string
+        responseTime: number
+        timestamp: number
+      }
+
+      switch (operation) {
+        case 'GET':
+          result = await window.api.snmp.get(snmpConfig, [oid])
+          break
+        case 'GETNEXT':
+          result = await window.api.snmp.getNext(snmpConfig, [oid])
+          break
+        case 'GETBULK':
+          result = await window.api.snmp.getBulk(snmpConfig, [oid], 10)
+          break
+        case 'WALK':
+          result = await window.api.snmp.walk(snmpConfig, oid)
+          break
+        case 'BULK_WALK':
+          result = await window.api.snmp.bulkWalk(snmpConfig, oid, 10)
+          break
+      }
+
+      if (result.success) {
+        setConnectionStatus('connected')
+        const rows: ResultRow[] = result.varbinds.map((vb, idx) => ({
+          key: `${result.timestamp}-${idx}`,
+          oid: vb.oid,
+          name: vb.name || '',
+          value: formatVarbindValue(vb.value, vb.type),
+          type: vb.type,
+          status: vb.isError ? 'error' as const : 'success' as const,
+          timestamp: new Date(result.timestamp).toLocaleTimeString(),
+          responseTime: result.responseTime
+        }))
+        addResults(rows)
+        setStatusMessage(`${operation}: ${rows.length} result(s), ${result.responseTime}ms`)
+      } else {
+        setConnectionStatus('error')
+        message.error(`SNMP error: ${result.error}`)
+        setStatusMessage(`Error: ${result.error}`)
+      }
+    } catch (err) {
+      setConnectionStatus('error')
+      const errMsg = err instanceof Error ? err.message : String(err)
+      message.error(`Request failed: ${errMsg}`)
+      setStatusMessage(`Error: ${errMsg}`)
+    } finally {
+      setIsQuerying(false)
+    }
+  }, [snmpConfig, addResults, setConnectionStatus, setStatusMessage, setIsQuerying])
+
   const contextMenuItems: MenuProps['items'] = useMemo(() => {
     if (!contextMenuNode) return []
 
+    const hasOid = !!contextMenuNode.oid
+
     return [
+      {
+        key: 'snmp-ops',
+        type: 'group' as const,
+        label: 'SNMP Operations',
+        children: [
+          {
+            key: 'snmp-get',
+            icon: <SendOutlined />,
+            label: 'GET',
+            disabled: !hasOid,
+            onClick: () => executeSnmpOperation('GET', contextMenuNode.oid)
+          },
+          {
+            key: 'snmp-getnext',
+            icon: <SwapOutlined />,
+            label: 'GETNEXT',
+            disabled: !hasOid,
+            onClick: () => executeSnmpOperation('GETNEXT', contextMenuNode.oid)
+          },
+          {
+            key: 'snmp-getbulk',
+            icon: <NodeIndexOutlined />,
+            label: 'GETBULK',
+            disabled: !hasOid,
+            onClick: () => executeSnmpOperation('GETBULK', contextMenuNode.oid)
+          },
+          {
+            key: 'snmp-walk',
+            icon: <ReloadOutlined />,
+            label: 'WALK',
+            disabled: !hasOid,
+            onClick: () => executeSnmpOperation('WALK', contextMenuNode.oid)
+          },
+          {
+            key: 'snmp-bulkwalk',
+            icon: <ScissorOutlined />,
+            label: 'BULK WALK',
+            disabled: !hasOid,
+            onClick: () => executeSnmpOperation('BULK_WALK', contextMenuNode.oid)
+          }
+        ]
+      },
+      { type: 'divider' as const },
       {
         key: 'copy-oid',
         icon: <CopyOutlined />,
@@ -167,7 +299,7 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
         }
       }
     ]
-  }, [contextMenuNode, collectSubtreeKeys, setQueryOid, setSelectedNode])
+  }, [contextMenuNode, collectSubtreeKeys, setQueryOid, setSelectedNode, executeSnmpOperation])
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -198,7 +330,6 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
 
     setStatusMessage(`Loading ${files.length} dropped MIB file(s)...`)
 
-    // Read file contents in the renderer via FileReader, then send to main process
     const readPromises = files.map(
       (file) =>
         new Promise<{ name: string; content: string }>((resolve, reject) => {
@@ -318,31 +449,40 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
       {/* Node detail section */}
       {selectedNode && (
         <div className="node-detail">
-          <h4>
-            <InfoCircleOutlined /> {selectedNode.name}
-          </h4>
-          <div className="node-detail-row">
-            <span className="node-detail-label">OID:</span>
-            <span className="node-detail-value">{selectedNode.oid}</span>
+          <div className="node-detail-header">
+            <span className="node-detail-icon">{getNodeIcon(selectedNode.kind)}</span>
+            <span className="node-detail-title">{selectedNode.name}</span>
+            <Tag
+              color={ACCESS_COLOR_MAP[selectedNode.access] || 'default'}
+              style={{ marginLeft: 'auto', fontSize: 11 }}
+            >
+              {selectedNode.access}
+            </Tag>
           </div>
-          <div className="node-detail-row">
-            <span className="node-detail-label">Type:</span>
-            <span className="node-detail-value">{selectedNode.syntax}</span>
-          </div>
-          <div className="node-detail-row">
-            <span className="node-detail-label">Access:</span>
-            <span className="node-detail-value">{selectedNode.access}</span>
-          </div>
-          <div className="node-detail-row">
-            <span className="node-detail-label">Module:</span>
-            <span className="node-detail-value">{selectedNode.module}</span>
-          </div>
-          {selectedNode.description && (
+          <div className="node-detail-body">
             <div className="node-detail-row">
-              <span className="node-detail-label">Description:</span>
-              <span className="node-detail-value">{selectedNode.description}</span>
+              <span className="node-detail-label">OID</span>
+              <span className="node-detail-value node-detail-oid">{selectedNode.oid || '—'}</span>
             </div>
-          )}
+            <div className="node-detail-row">
+              <span className="node-detail-label">Syntax</span>
+              <span className="node-detail-value">{selectedNode.syntax || '—'}</span>
+            </div>
+            <div className="node-detail-row">
+              <span className="node-detail-label">Kind</span>
+              <span className="node-detail-value">{selectedNode.kind || '—'}</span>
+            </div>
+            <div className="node-detail-row">
+              <span className="node-detail-label">Module</span>
+              <span className="node-detail-value">{selectedNode.module || '—'}</span>
+            </div>
+            {selectedNode.description && (
+              <div className="node-detail-row node-detail-desc">
+                <span className="node-detail-label">Description</span>
+                <span className="node-detail-value">{selectedNode.description}</span>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>
@@ -363,22 +503,21 @@ function convertToDataNode(node: MibTreeNodeData, searchText: string): DataNode 
     key: node.id,
     title: (
       <span
+        className="mib-node-title"
         onDoubleClick={() => useAppStore.getState().setQueryOid(node.oid)}
         style={isMatch ? { background: '#fff3cd', padding: '0 2px', borderRadius: 2 } : undefined}
       >
-        <span className={`mib-node-icon ${node.kind}`}>{icon}</span>
-        <span className="mib-node-name">{node.name}</span>
-        <span className="mib-node-oid">{node.oid}</span>
+        {node.name}
       </span>
     ),
-    icon,
+    icon: <span className={`mib-node-icon mib-node-${node.kind}`}>{icon}</span>,
     children: node.children.map((child) => convertToDataNode(child, searchText)),
     isLeaf: node.children.length === 0
   }
 }
 
 /**
- * Get icon for node kind
+ * Get icon component for node kind - matching MG-SOFT style with distinct icons per type
  */
 function getNodeIcon(kind: string): React.ReactNode {
   switch (kind) {
@@ -389,12 +528,13 @@ function getNodeIcon(kind: string): React.ReactNode {
     case 'notification': return <AlertOutlined />
     case 'group': return <ClusterOutlined />
     case 'root': return <ClusterOutlined />
+    case 'module': return <FolderOpenOutlined />
     default: return <FileOutlined />
   }
 }
 
 /**
- * Filter MIB tree nodes by search text (operates on raw data, not JSX)
+ * Filter MIB tree nodes by search text
  */
 function filterMibTree(nodes: MibTreeNodeData[], searchText: string): MibTreeNodeData[] {
   const result: MibTreeNodeData[] = []
@@ -423,4 +563,39 @@ function findNodeById(nodes: MibTreeNodeData[], id: string): MibTreeNodeData | n
     if (found) return found
   }
   return null
+}
+
+/**
+ * Format a varbind value for display in results
+ */
+function formatVarbindValue(value: string | number | Buffer | null, type: string): string {
+  if (value === null || value === undefined) return ''
+
+  if (typeof value === 'object' && !Array.isArray(value) && 'type' in value && (value as Record<string, unknown>).type === 'Buffer' && 'data' in value) {
+    const bytes = (value as unknown as { data: number[] }).data
+    if (type === 'IpAddress' && bytes.length === 4) {
+      return bytes.join('.')
+    }
+    return bytes.map(b => b.toString(16).padStart(2, '0')).join(' ')
+  }
+
+  if (Buffer.isBuffer(value)) {
+    const bytes = Array.from(value)
+    if (type === 'IpAddress' && bytes.length === 4) {
+      return bytes.join('.')
+    }
+    return bytes.map(b => b.toString(16).padStart(2, '0')).join(' ')
+  }
+
+  if (type === 'TimeTicks') {
+    const ticks = Number(value)
+    const days = Math.floor(ticks / 8640000)
+    const hours = Math.floor((ticks % 8640000) / 360000)
+    const minutes = Math.floor((ticks % 360000) / 6000)
+    const seconds = Math.floor((ticks % 6000) / 100)
+    const hundredths = ticks % 100
+    return `${days}d ${hours}h ${minutes}m ${seconds}.${hundredths}s`
+  }
+
+  return String(value)
 }

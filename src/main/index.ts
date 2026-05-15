@@ -1,7 +1,7 @@
 import { app, BrowserWindow, shell } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
-import { registerIpcHandlers } from './ipc/handlers'
+import { registerIpcHandlers, loadMibCache } from './ipc/handlers'
 
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
@@ -42,8 +42,9 @@ app.whenReady().then(() => {
     optimizer.watchWindowShortcuts(window)
   })
 
-  // Register IPC handlers
+  // Register IPC handlers and load cached MIB data
   registerIpcHandlers()
+  loadMibCache()
 
   createWindow()
 

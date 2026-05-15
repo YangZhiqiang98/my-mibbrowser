@@ -4,7 +4,7 @@ import { MibParser, buildMibTree, resolveOidToName } from '../mib/parser'
 import type { MibParseResult, MibNode, MibModule } from '../mib/types'
 import { snmpGet, snmpGetNext, snmpGetBulk, snmpSet, snmpWalk, snmpBulkWalk } from '../snmp/client'
 import type { SnmpConfig, SnmpResult, SnmpSetValue, SnmpVarbind } from '../snmp/types'
-import { readFileSync, writeFileSync, existsSync } from 'fs'
+import { readFileSync, writeFileSync, existsSync, unlinkSync } from 'fs'
 import { join } from 'path'
 import { app } from 'electron'
 
@@ -13,6 +13,69 @@ const mibParser = new MibParser()
 // In-memory MIB tree state - persists across loads for incremental building
 let mibNodes: MibNode[] = []
 let accumulatedModules: MibModule[] = []
+
+const CACHE_FILE = 'mib-cache.json'
+const CACHE_VERSION = 2 // Bump when cache format or parsing logic changes
+
+function getCachePath(): string {
+  return join(app.getPath('userData'), CACHE_FILE)
+}
+
+interface MibCache {
+  version?: number
+  timestamp: number
+  modules: MibModule[]
+  nodes: MibNode[]
+}
+
+/**
+ * Save current MIB tree state to cache file.
+ */
+function saveCache(): void {
+  try {
+    const cache: MibCache = {
+      version: CACHE_VERSION,
+      timestamp: Date.now(),
+      modules: accumulatedModules,
+      nodes: mibNodes
+    }
+    writeFileSync(getCachePath(), JSON.stringify(cache), 'utf-8')
+  } catch {
+    // Silent fail - cache is optional
+  }
+}
+
+/**
+ * Load cached MIB tree from disk.
+ * Called on app startup to restore previously parsed MIB data.
+ * Invalidates cache if version mismatch is detected.
+ */
+export function loadMibCache(): void {
+  const cachePath = getCachePath()
+  if (!existsSync(cachePath)) return
+
+  try {
+    const raw = readFileSync(cachePath, 'utf-8')
+    const cache: MibCache = JSON.parse(raw)
+
+    // Invalidate cache on version mismatch (e.g., after parser bug fixes)
+    if (cache.version !== CACHE_VERSION) {
+      try {
+        unlinkSync(cachePath)
+      } catch {
+        // Ignore deletion errors
+      }
+      return
+    }
+
+    if (cache.modules && cache.nodes) {
+      accumulatedModules = cache.modules
+      mibNodes = cache.nodes
+    }
+  } catch {
+    // Corrupt cache - ignore, will be overwritten on next parse
+  }
+}
 
 /**
  * Register all IPC handlers for main process
@@ -70,6 +133,7 @@ async function handleOpenMibFiles(): Promise<MibParseResult> {
   accumulatedModules = [...accumulatedModules, ...parseResult.modules]
   const tree = buildMibTree(accumulatedModules)
   mibNodes = tree
+  saveCache()
 
   return parseResult
 }
@@ -97,6 +161,7 @@ async function handleOpenMibDirectory(): Promise<MibParseResult> {
   accumulatedModules = [...accumulatedModules, ...parseResult.modules]
   const tree = buildMibTree(accumulatedModules)
   mibNodes = tree
+  saveCache()
 
   return parseResult
 }
@@ -113,6 +178,7 @@ function handleLoadMibContent(
   accumulatedModules = [...accumulatedModules, ...parseResult.modules]
   const tree = buildMibTree(accumulatedModules)
   mibNodes = tree
+  saveCache()
 
   return parseResult
 }

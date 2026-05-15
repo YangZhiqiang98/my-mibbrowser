@@ -1,0 +1,1 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Quality checks for file I/O edge cases: empty directories, corrupt cache, permission errors"}
