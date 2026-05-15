@@ -139,3 +139,36 @@ Fixed three MIB parser bugs: (1) IMPORTS section was parsed as definitions causi
 ### Next Steps
 
 - None - task complete
+
+
+## Session 5: MIB tree OID dedup, orphan filter, configurable cache directory
+
+**Date**: 2026-05-15
+**Task**: MIB tree OID dedup, orphan filter, configurable cache directory
+**Branch**: `master`
+
+### Summary
+
+Implemented three features: (1) OID-based deduplication in buildMibTree merging children/properties, (2) orphan node filtering to only show nodes traceable to iso root, (3) configurable cache directory with per-directory cache files and multi-cache auto-load on startup. Check agent found and fixed 4 issues including critical parentId inheritance bug in dedup logic.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `2fc8cb8` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
