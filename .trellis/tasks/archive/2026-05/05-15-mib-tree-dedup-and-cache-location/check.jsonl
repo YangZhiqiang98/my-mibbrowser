@@ -1,0 +1,1 @@
+{"file": "prd.md", "reason": "Verify all acceptance criteria: single iso root, no orphans, OID dedup, cache directory, multi-cache load"}
