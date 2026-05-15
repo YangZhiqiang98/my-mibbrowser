@@ -71,3 +71,36 @@ Completed MIB tree OID resolution (::={ parent child } → full OID path), OID-t
 ### Next Steps
 
 - None - task complete
+
+
+## Session 3: Bugfix: SNMP session, test connection, OID parsing, resizable panel, right-click menu
+
+**Date**: 2026-05-15
+**Task**: Bugfix: SNMP session, test connection, OID parsing, resizable panel, right-click menu
+**Branch**: `master`
+
+### Summary
+
+Fixed 5 bugs: SNMP session creation (v1/v2c target format, v3 createV3Session, timeout ms unit), added test connection button, multi-segment OID parser for MIB files, resizable left panel with drag handle, right-click context menu on MIB nodes. All checks pass.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `44d8acb` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
