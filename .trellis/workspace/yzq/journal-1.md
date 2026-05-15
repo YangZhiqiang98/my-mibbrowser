@@ -104,3 +104,38 @@ Fixed 5 bugs: SNMP session creation (v1/v2c target format, v3 createV3Session, t
 ### Next Steps
 
 - None - task complete
+
+
+## Session 4: MIB parser fixes: IMPORTS pollution, OID construction, duplicate nodes
+
+**Date**: 2026-05-15
+**Task**: MIB parser fixes: IMPORTS pollution, OID construction, duplicate nodes
+**Branch**: `master`
+
+### Summary
+
+Fixed three MIB parser bugs: (1) IMPORTS section was parsed as definitions causing 9011 invalid nodes - added stripImportsSection() helper, (2) OID resolution used array position instead of actual OID component - updated buildTreeFromNodes to prefer node.oid, (3) duplicate tree nodes and horizontal scroll issues in renderer. Task mib-file-recursive-load-and-cache AC all met.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `403e3f7` | (see git log) |
+| `59c9aa8` | (see git log) |
+| `358cb59` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
