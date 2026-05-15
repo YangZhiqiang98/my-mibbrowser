@@ -9,7 +9,6 @@ import {
   TableOutlined,
   ClusterOutlined,
   AlertOutlined,
-  InfoCircleOutlined,
   CopyOutlined,
   ExpandOutlined,
   CompressOutlined,
