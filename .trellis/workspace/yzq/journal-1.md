@@ -207,3 +207,36 @@ Verified that all three PRD requirements were already implemented: (1) OID fix v
 ### Next Steps
 
 - None - task complete
+
+
+## Session 6: fix: stable node IDs, GETBULK flatten, sourceDir-aware cache dedup
+
+**Date**: 2026-05-18
+**Task**: fix: stable node IDs, GETBULK flatten, sourceDir-aware cache dedup
+**Branch**: `master`
+
+### Summary
+
+Fixed 4 regression bugs: (1) MIB tree corruption from counter-based node ID collision replaced with content-derived stable IDs, (2) GETBULK empty results from net-snmp hybrid varbind format fixed with flattenBulkVarbinds helper, (3) cache persistence broken by name-based dedup replaced with sourceDir-aware reference tracking, (4) extractModuleName producing IMPORTS fixed by removing ^ anchor and stripping IMPORTS before fallback. Also extracted shared formatBytesToString utility and fixed 2 pre-existing TS2352 typecheck errors.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e45deb9` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
