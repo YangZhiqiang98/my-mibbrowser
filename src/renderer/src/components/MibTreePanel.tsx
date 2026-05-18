@@ -25,6 +25,7 @@ import { useAppStore } from '../stores/appStore'
 import type { MibTreeNodeData } from '../types'
 import type { ResultRow } from '../types'
 import { buildTreeFromNodes } from '../utils/mibTreeUtils'
+import { formatBytesToString } from '../utils/formatBytes'
 
 const ACCESS_COLOR_MAP: Record<string, string> = {
   'read-only': 'blue',
@@ -86,9 +87,15 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
     setSearchMatchIds(matchIds)
     setCurrentMatchIndex(0)
 
-    // Expand ancestors of all matches
+    // Expand ancestors of all matches and auto-select the first match
     if (matchIds.length > 0) {
       setExpandedKeys(prev => [...new Set([...prev, ...ancestorIds])])
+      // Auto-select the first match so the user can see it
+      const firstMatch = findNodeById(mibTree, matchIds[0])
+      if (firstMatch) {
+        setSelectedNode(firstMatch)
+        setQueryOid(firstMatch.oid)
+      }
     }
   }, [searchText, mibTree])
 
@@ -104,12 +111,25 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
       setExpandedKeys(prev => [...new Set([...prev, ...ancestors])])
     }
 
-    // Scroll to the match node after a short delay to let tree expand
-    const rafId = requestAnimationFrame(() => {
-      treeRef.current?.scrollTo({ key: matchId })
-    })
-    return () => cancelAnimationFrame(rafId)
-  }, [currentMatchIndex, searchMatchIds])
+    // Scroll to the match node after a delay to let tree expand and render
+    const timerId = setTimeout(() => {
+      // Use DOM-based scrollIntoView as it's more reliable than antd Tree's scrollTo
+      const treeContent = document.querySelector('.mib-tree-content')
+      if (!treeContent) return
+      const nodeEl = treeContent.querySelector(`[data-node-id="${matchId}"]`)
+      if (nodeEl) {
+        nodeEl.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      } else {
+        // Fallback: try antd Tree's scrollTo
+        try {
+          treeRef.current?.scrollTo({ key: matchId })
+        } catch {
+          // Ignore scroll errors
+        }
+      }
+    }, 150)
+    return () => clearTimeout(timerId)
+  }, [currentMatchIndex, searchMatchIds, mibTree])
 
   // Handle Enter key in search input to cycle through matches
   const handleSearchKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -131,6 +151,28 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
   const filteredTreeData = useMemo(() => {
     return mibTree.map((node) => convertToDataNode(node, searchMatchSet))
   }, [mibTree, searchMatchSet])
+
+  // Collect all valid node IDs from the current tree for validation
+  const validNodeIds = useMemo(() => {
+    const ids = new Set<string>()
+    function collect(nodes: MibTreeNodeData[]) {
+      for (const node of nodes) {
+        ids.add(node.id)
+        collect(node.children)
+      }
+    }
+    collect(mibTree)
+    return ids
+  }, [mibTree])
+
+  // Clean up stale expandedKeys when tree data changes
+  useEffect(() => {
+    setExpandedKeys(prev => {
+      const valid = prev.filter(k => validNodeIds.has(k))
+      if (valid.length === prev.length) return prev // No change
+      return valid
+    })
+  }, [validNodeIds])
 
   const handleOpenFiles = useCallback(async () => {
     setStatusMessage('Loading MIB files...')
@@ -598,6 +640,7 @@ function convertToDataNode(node: MibTreeNodeData, searchMatchSet: Set<string>): 
     title: (
       <span
         className="mib-node-title"
+        data-node-id={node.id}
         onDoubleClick={() => useAppStore.getState().setQueryOid(node.oid)}
         style={isMatch ? { background: '#fff3cd', padding: '0 2px', borderRadius: 2 } : undefined}
       >
@@ -657,20 +700,25 @@ function findNodeById(nodes: MibTreeNodeData[], id: string): MibTreeNodeData | n
 function formatVarbindValue(value: string | number | Buffer | null, type: string): string {
   if (value === null || value === undefined) return ''
 
-  if (typeof value === 'object' && !Array.isArray(value) && 'type' in value && (value as Record<string, unknown>).type === 'Buffer' && 'data' in value) {
-    const bytes = (value as unknown as { data: number[] }).data
-    if (type === 'IpAddress' && bytes.length === 4) {
-      return bytes.join('.')
+  // Handle serialized Buffer from IPC: { type: 'Buffer', data: number[] }
+  // Electron IPC may serialize Buffer to a plain object in the renderer context
+  if (typeof value === 'object' && !Array.isArray(value)) {
+    const obj = value as unknown as Record<string, unknown>
+    if (obj.type === 'Buffer' && Array.isArray(obj.data)) {
+      const bytes = obj.data as number[]
+      return formatBytesToString(bytes, type)
     }
-    return bytes.map(b => b.toString(16).padStart(2, '0')).join(' ')
-  }
-
-  if (Buffer.isBuffer(value)) {
-    const bytes = Array.from(value)
-    if (type === 'IpAddress' && bytes.length === 4) {
-      return bytes.join('.')
+    // Plain Buffer object (from structured clone)
+    if (typeof (value as Buffer).length === 'number' && typeof (value as Buffer)[0] !== 'undefined') {
+      const bytes = Array.from(value as Buffer)
+      return formatBytesToString(bytes, type)
     }
-    return bytes.map(b => b.toString(16).padStart(2, '0')).join(' ')
+    // Fallback: try JSON serialization for unknown objects
+    try {
+      return JSON.stringify(value)
+    } catch {
+      return String(value)
+    }
   }
 
   if (type === 'TimeTicks') {
@@ -685,3 +733,4 @@ function formatVarbindValue(value: string | number | Buffer | null, type: string
 
   return String(value)
 }
+

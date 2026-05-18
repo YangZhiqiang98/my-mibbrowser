@@ -9,10 +9,10 @@ export function StatusBar(): React.ReactElement {
   const loadedModules = useAppStore((s) => s.loadedModules)
 
   const statusLabel = {
-    disconnected: 'Disconnected',
+    disconnected: 'Ready',
     connecting: 'Connecting...',
     connected: 'Connected',
-    error: 'Error'
+    error: 'Connection Error'
   }
 
   return (

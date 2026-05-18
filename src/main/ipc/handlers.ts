@@ -15,10 +15,13 @@ const mibParser = new MibParser()
 let mibNodes: MibNode[] = []
 let accumulatedModules: MibModule[] = []
 
-// Track which directory each module came from, for dedup on reload
-let directoryModuleMap: Map<string, string[]> = new Map()
+// Track which directory each module came from, for dedup on reload.
+// The value is the actual MibModule reference so we can precisely remove
+// just the modules that belonged to a directory on reload, even when
+// different directories happen to contain modules with the same name.
+let directoryModuleMap: Map<string, MibModule[]> = new Map()
 
-const CACHE_VERSION = 3 // Bump when cache format or parsing logic changes
+const CACHE_VERSION = 4 // Bump when cache format or parsing logic changes
 const CACHE_DIR_CONFIG_FILE = 'cache-dir-config.json'
 
 interface MibCache {
@@ -89,8 +92,7 @@ function saveCacheForDirectory(dirPath: string): void {
       mkdirSync(cacheDir, { recursive: true })
     }
     const cachePath = getDirectoryCachePath(dirPath)
-    const modulesForDir = directoryModuleMap.get(dirPath) ?? []
-    const modules = accumulatedModules.filter(m => modulesForDir.includes(m.name))
+    const modules = directoryModuleMap.get(dirPath) ?? []
     const cache: MibCache = {
       version: CACHE_VERSION,
       timestamp: Date.now(),
@@ -107,6 +109,13 @@ function saveCacheForDirectory(dirPath: string): void {
 /**
  * Load all cache files from the configured cache directory and merge them.
  * Called on app startup to restore previously parsed MIB data.
+ *
+ * Each cache file represents the modules loaded from one source directory
+ * (or file-load / drag-and-drop key). Dedup is scoped by `${sourceDir}::${name}`
+ * so two distinct source dirs that happen to share a module name do not wipe
+ * each other's data. This fixes the regression where many cache files ended up
+ * with a fallback module name (e.g. "IMPORTS") and used to clobber unrelated
+ * cached modules.
  */
 export function loadMibCache(): void {
   const cacheDir = getCacheDir()
@@ -127,22 +136,34 @@ export function loadMibCache(): void {
           continue
         }
 
-        if (cache.modules && cache.modules.length > 0) {
-          // Merge modules, replacing duplicates by name
-          const existingNames = new Set(accumulatedModules.map(m => m.name))
-          for (const mod of cache.modules) {
-            if (!existingNames.has(mod.name)) {
-              accumulatedModules.push(mod)
-            }
-          }
-          // Restore directory-module mapping so directory reload dedup works
-          if (cache.sourceDir) {
-            const existing = directoryModuleMap.get(cache.sourceDir) ?? []
-            const newNames = cache.modules.map(m => m.name)
-            const merged = [...new Set([...existing, ...newNames])]
-            directoryModuleMap.set(cache.sourceDir, merged)
-          }
+        if (!cache.modules || cache.modules.length === 0) continue
+
+        // sourceDir is the dedup namespace. Fall back to the cache file path
+        // so caches missing sourceDir do not collapse together.
+        const dirKey = cache.sourceDir ?? filePath
+
+        // Within a single cache file, prefer the last occurrence if the
+        // file accidentally contains duplicate module names.
+        const modulesByName = new Map<string, MibModule>()
+        for (const mod of cache.modules) {
+          modulesByName.set(mod.name, mod)
         }
+
+        // Remove any existing modules previously tracked for this source dir
+        // (e.g. when the same cache file is loaded twice during a session)
+        // and replace them with the fresh cache contents.
+        const previousForDir = directoryModuleMap.get(dirKey) ?? []
+        if (previousForDir.length > 0) {
+          const previousSet = new Set(previousForDir)
+          accumulatedModules = accumulatedModules.filter(m => !previousSet.has(m))
+        }
+
+        const modulesForDir: MibModule[] = []
+        for (const mod of modulesByName.values()) {
+          accumulatedModules.push(mod)
+          modulesForDir.push(mod)
+        }
+        directoryModuleMap.set(dirKey, modulesForDir)
       } catch {
         // Corrupt cache file - skip
       }
@@ -213,13 +234,25 @@ async function handleOpenMibFiles(): Promise<MibParseResult> {
   }
 
   const parseResult = mibParser.parseFiles(result.filePaths)
-  // Merge modules, replacing duplicates by name
-  const newNames = new Set(parseResult.modules.map(m => m.name))
-  accumulatedModules = [
-    ...accumulatedModules.filter(m => !newNames.has(m.name)),
-    ...parseResult.modules
-  ]
+
+  // "Files" load replaces the prior file-key bucket; other source directories
+  // are preserved. Reference-based filtering avoids name collisions wiping
+  // unrelated modules from other source dirs.
+  const fileKey = '__file_load__'
+  const previousForKey = directoryModuleMap.get(fileKey) ?? []
+  if (previousForKey.length > 0) {
+    const previousSet = new Set(previousForKey)
+    accumulatedModules = accumulatedModules.filter(m => !previousSet.has(m))
+  }
+  accumulatedModules = [...accumulatedModules, ...parseResult.modules]
+  directoryModuleMap.set(fileKey, [...parseResult.modules])
+
   mibNodes = buildMibTree(accumulatedModules)
+
+  // Track loaded file modules for caching
+  if (parseResult.modules.length > 0) {
+    saveCacheForDirectory(fileKey)
+  }
 
   return parseResult
 }
@@ -246,14 +279,18 @@ async function handleOpenMibDirectory(): Promise<MibParseResult> {
   const dirPath = result.filePaths[0]
   const parseResult = mibParser.parseDirectory(dirPath)
 
-  // Deduplicate: remove old modules from this directory, then add new ones
-  const oldModuleNames = directoryModuleMap.get(dirPath) ?? []
-  const newModuleNames = parseResult.modules.map(m => m.name)
-  accumulatedModules = accumulatedModules.filter(m => !oldModuleNames.includes(m.name))
+  // Remove only the modules that this directory contributed previously
+  // (tracked by reference, not by name) so other directories' modules with
+  // the same name are not collateral damage.
+  const previousForDir = directoryModuleMap.get(dirPath) ?? []
+  if (previousForDir.length > 0) {
+    const previousSet = new Set(previousForDir)
+    accumulatedModules = accumulatedModules.filter(m => !previousSet.has(m))
+  }
   accumulatedModules = [...accumulatedModules, ...parseResult.modules]
 
-  // Update directory-module mapping
-  directoryModuleMap.set(dirPath, newModuleNames)
+  // Update directory-module mapping with the fresh module references
+  directoryModuleMap.set(dirPath, [...parseResult.modules])
 
   mibNodes = buildMibTree(accumulatedModules)
 
@@ -272,13 +309,28 @@ function handleLoadMibContent(
   contents: Array<{ name: string; content: string }>
 ): MibParseResult {
   const parseResult = mibParser.parseFileContents(contents)
-  // Merge modules, replacing duplicates by name
+
+  // Drag-and-drop is tracked under a single bucket. Replace prior modules from
+  // that bucket using reference identity to avoid removing modules contributed
+  // by other source directories.
+  const fileKey = '__dnd_load__'
+  const previousForKey = directoryModuleMap.get(fileKey) ?? []
   const newNames = new Set(parseResult.modules.map(m => m.name))
-  accumulatedModules = [
-    ...accumulatedModules.filter(m => !newNames.has(m.name)),
-    ...parseResult.modules
-  ]
+  // From the previous DnD bucket, drop any modules that share a name with the
+  // freshly dropped content (they are being re-loaded). Keep the rest so the
+  // user can build a DnD set incrementally.
+  const survivingPrevious = previousForKey.filter(m => !newNames.has(m.name))
+  const previousSet = new Set(previousForKey)
+  accumulatedModules = accumulatedModules.filter(m => !previousSet.has(m))
+  accumulatedModules = [...accumulatedModules, ...survivingPrevious, ...parseResult.modules]
+
+  directoryModuleMap.set(fileKey, [...survivingPrevious, ...parseResult.modules])
+
   mibNodes = buildMibTree(accumulatedModules)
+
+  if (parseResult.modules.length > 0) {
+    saveCacheForDirectory(fileKey)
+  }
 
   return parseResult
 }

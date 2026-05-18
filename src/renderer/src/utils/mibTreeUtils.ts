@@ -46,16 +46,18 @@ export function buildTreeFromNodes(nodes: RawMibNode[]): MibTreeNodeData[] {
         continue
       }
 
+      // Fallback: try to build OID from parent's resolved OID
+      // This is less reliable as child index may not match OID suffix,
+      // but it's better than having no OID at all for search/navigation
       const parentOid = resolvedOids.get(node.parentId)
       if (!parentOid) continue
 
-      // Find the child index from the parent's children array
       const parent = nodeMap.get(node.parentId)
       if (!parent) continue
 
       const childIndex = parent.children.indexOf(node.id)
       if (childIndex >= 0) {
-        const fullOid = `${parentOid}.${childIndex}`
+        const fullOid = `${parentOid}.${childIndex + 1}`
         resolvedOids.set(node.id, fullOid)
         changed = true
       }

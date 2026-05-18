@@ -3,6 +3,40 @@ import snmp from 'net-snmp'
 import type { SnmpConfig, SnmpResult, SnmpVarbind, SnmpSetValue, SecurityLevel } from './types'
 
 /**
+ * Raw varbind shape returned by net-snmp before formatting.
+ */
+type RawVarbind = { oid: string; type: number; value: unknown }
+
+/**
+ * Normalize the varbinds returned by net-snmp's getBulk.
+ *
+ * net-snmp returns a hybrid shape:
+ *   - indices [0..nonRepeaters-1]: a single varbind object per non-repeater OID
+ *   - indices [nonRepeaters..]:    an inner array of varbinds per repeater OID
+ *
+ * This flattens both segments into a single varbind list so callers can map
+ * over them uniformly.
+ */
+function flattenBulkVarbinds(raw: unknown[], nonRepeaters: number): RawVarbind[] {
+  const out: RawVarbind[] = []
+  for (let i = 0; i < raw.length; i++) {
+    const item = raw[i]
+    if (i < nonRepeaters) {
+      if (item) out.push(item as RawVarbind)
+      continue
+    }
+    if (Array.isArray(item)) {
+      for (const sub of item) {
+        if (sub) out.push(sub as RawVarbind)
+      }
+    } else if (item) {
+      out.push(item as RawVarbind)
+    }
+  }
+  return out
+}
+
+/**
  * Format a varbind value for display
  */
 function formatVarbindValue(varbind: { oid: string; type: number; value: unknown }): SnmpVarbind {
@@ -42,11 +76,23 @@ function formatVarbindValue(varbind: { oid: string; type: number; value: unknown
     errorMsg = 'endOfMibView'
     formattedValue = 'endOfMibView'
   } else if (Buffer.isBuffer(varbind.value)) {
-    // Check if it looks like an IP address (4 bytes)
     if (varbind.type === 64 && varbind.value.length === 4) {
+      // IpAddress: convert 4 bytes to dotted format
       formattedValue = Array.from(varbind.value).join('.')
+    } else if (varbind.type === 67) {
+      // TimeTicks: keep as number
+      formattedValue = varbind.value.readUInt32BE(0)
     } else {
-      formattedValue = varbind.value
+      // OCTET STRING and others: try to decode as UTF-8 text
+      const text = varbind.value.toString('utf-8')
+      // If the text contains mostly printable characters, use it as-is
+      const printable = text.replace(/[\x00-\x08\x0e-\x1f]/g, '')
+      if (printable.length >= text.length * 0.8 && text.length > 0) {
+        formattedValue = text
+      } else {
+        // Binary data: keep as Buffer for hex display
+        formattedValue = varbind.value
+      }
     }
   } else {
     formattedValue = varbind.value as string | number | null
@@ -215,9 +261,8 @@ export function snmpGetBulk(
         return
       }
 
-      const results = (varbinds || []).map((vb: unknown) =>
-        formatVarbindValue(vb as { oid: string; type: number; value: unknown })
-      )
+      const flat = flattenBulkVarbinds(varbinds || [], nonRepeaters)
+      const results = flat.map((vb) => formatVarbindValue(vb))
 
       session.close()
       resolve({
@@ -379,9 +424,10 @@ export function snmpBulkWalk(
         return
       }
 
+      const flat = flattenBulkVarbinds(varbinds || [], 0)
       let lastOid = ''
 
-      for (const vb of varbinds as Array<{ oid: string; type: number; value: unknown }>) {
+      for (const vb of flat) {
         if (snmp.isVarbindError(vb)) {
           session.close()
           resolve({
@@ -409,7 +455,7 @@ export function snmpBulkWalk(
         lastOid = vb.oid
       }
 
-      if (varbinds.length > 0 && lastOid) {
+      if (flat.length > 0 && lastOid) {
         session.getBulk([lastOid], 0, maxRepetitions, callback)
       } else {
         session.close()

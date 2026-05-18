@@ -6,6 +6,7 @@ import {
   ClearOutlined
 } from '@ant-design/icons'
 import { useAppStore } from '../stores/appStore'
+import { formatBytesToString } from '../utils/formatBytes'
 import type { SnmpOperation } from '../../../main/snmp/types'
 import type { ResultRow } from '../types'
 
@@ -242,21 +243,22 @@ export function QueryPanel(): React.ReactElement {
 function formatValue(value: string | number | Buffer | null, type: string): string {
   if (value === null || value === undefined) return ''
 
-  if (typeof value === 'object' && !Array.isArray(value) && 'type' in value && (value as Record<string, unknown>).type === 'Buffer' && 'data' in value) {
-    // Buffer serialized via IPC (JSON { type: 'Buffer', data: number[] })
-    const bytes = (value as unknown as { data: number[] }).data
-    if (type === 'IpAddress' && bytes.length === 4) {
-      return bytes.join('.')
+  // Handle serialized Buffer from IPC: { type: 'Buffer', data: number[] }
+  if (typeof value === 'object' && !Array.isArray(value)) {
+    const obj = value as unknown as Record<string, unknown>
+    if (obj.type === 'Buffer' && Array.isArray(obj.data)) {
+      const bytes = obj.data as number[]
+      return formatBytesToString(bytes, type)
     }
-    return bytes.map(b => b.toString(16).padStart(2, '0')).join(' ')
-  }
-
-  if (Buffer.isBuffer(value)) {
-    const bytes = Array.from(value)
-    if (type === 'IpAddress' && bytes.length === 4) {
-      return bytes.join('.')
+    if (typeof (value as Buffer).length === 'number' && typeof (value as Buffer)[0] !== 'undefined') {
+      const bytes = Array.from(value as Buffer)
+      return formatBytesToString(bytes, type)
     }
-    return bytes.map(b => b.toString(16).padStart(2, '0')).join(' ')
+    try {
+      return JSON.stringify(value)
+    } catch {
+      return String(value)
+    }
   }
 
   if (type === 'TimeTicks') {

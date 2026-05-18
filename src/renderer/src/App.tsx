@@ -12,6 +12,8 @@ import { buildTreeFromNodes } from './utils/mibTreeUtils'
 export default function App(): React.ReactElement {
   const setProfiles = useAppStore((s) => s.setProfiles)
   const setMibTree = useAppStore((s) => s.setMibTree)
+  const addLoadedModule = useAppStore((s) => s.addLoadedModule)
+  const setStatusMessage = useAppStore((s) => s.setStatusMessage)
 
   const [leftPanelWidth, setLeftPanelWidth] = useState(320)
   const isDragging = useRef(false)
@@ -49,11 +51,22 @@ export default function App(): React.ReactElement {
   useEffect(() => {
     // Load saved profiles on startup
     window.api.profile.load().then(setProfiles).catch(() => {})
-    // Load existing MIB tree if any
+    // Hydrate MIB tree and loaded modules from cached backend state on startup
     window.api.mib.getTree().then((nodes) => {
-      if (nodes.length > 0) {
-        const tree = buildTreeFromNodes(nodes)
-        setMibTree(tree)
+      if (nodes.length === 0) return
+      const tree = buildTreeFromNodes(nodes)
+      setMibTree(tree)
+      // Aggregate unique module names from nodes so the status bar / loaded
+      // modules list reflects what was restored from cache
+      const moduleNames = new Set<string>()
+      for (const node of nodes) {
+        if (node.module) moduleNames.add(node.module)
+      }
+      for (const name of moduleNames) {
+        addLoadedModule(name)
+      }
+      if (moduleNames.size > 0) {
+        setStatusMessage(`Restored ${moduleNames.size} module(s) from cache`)
       }
     }).catch(() => {})
   }, [])

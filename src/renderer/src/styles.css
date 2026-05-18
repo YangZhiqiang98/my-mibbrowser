@@ -333,7 +333,7 @@ html, body, #root {
 }
 
 .status-indicator.disconnected {
-  background: #ff4d4f;
+  background: #999;
 }
 
 .status-indicator.connected {

@@ -18,7 +18,6 @@ export class MibParser {
   private modules: MibModule[] = []
   private errors: MibParseError[] = []
   private warnings: string[] = []
-  private nodeIdCounter = 0
 
   /**
    * Parse one or more MIB files
@@ -27,7 +26,6 @@ export class MibParser {
     this.modules = []
     this.errors = []
     this.warnings = []
-    this.nodeIdCounter = 0
 
     for (const filePath of filePaths) {
       try {
@@ -58,7 +56,6 @@ export class MibParser {
     this.modules = []
     this.errors = []
     this.warnings = []
-    this.nodeIdCounter = 0
 
     for (const file of fileContents) {
       try {
@@ -145,16 +142,28 @@ export class MibParser {
   }
 
   /**
-   * Extract module name from MIB content
+   * Extract module name from MIB content.
+   *
+   * MIB files frequently begin with comments (e.g. "-- file: FOO-MIB.my")
+   * or surrounding whitespace before the actual `MODULE-NAME DEFINITIONS ::= BEGIN`
+   * declaration, so the primary regex must NOT be anchored to position 0.
+   *
+   * The MODULE-IDENTITY fallback also must not run against the raw content —
+   * the IMPORTS section typically lists `MODULE-IDENTITY` as an imported symbol,
+   * which would otherwise yield the bogus module name "IMPORTS". The IMPORTS
+   * section is stripped before the fallback search.
    */
   private extractModuleName(content: string, fileName: string): string {
-    // Try to match "MODULE-IDENTITY" pattern or "DEFINITIONS" pattern
-    const moduleMatch = content.match(/^(\S+)\s+DEFINITIONS\s*::=\s*BEGIN/i)
+    // Match `MODULE-NAME DEFINITIONS ::= BEGIN`. Allowed anywhere in the file
+    // (not anchored to ^) so leading comments and whitespace do not block it.
+    const moduleMatch = content.match(/(\S+)\s+DEFINITIONS\s*::=\s*BEGIN/i)
     if (moduleMatch) {
       return moduleMatch[1]
     }
-    // Try MODULE-IDENTITY in OBJECT IDENTIFIER
-    const identityMatch = content.match(/(\S+)\s+MODULE-IDENTITY/i)
+    // Fallback: locate the MODULE-IDENTITY macro invocation, but ignore the
+    // IMPORTS section to avoid grabbing the literal token `IMPORTS`.
+    const withoutImports = stripImportsSection(content)
+    const identityMatch = withoutImports.match(/(\S+)\s+MODULE-IDENTITY/i)
     if (identityMatch) {
       return identityMatch[1]
     }
@@ -222,7 +231,7 @@ export class MibParser {
       const kind = this.determineKind(syntax, access)
 
       const node: MibNode = {
-        id: `node-${++this.nodeIdCounter}`,
+        id: `${moduleName}::${name}`,
         name,
         oid: [],
         oidString: '',
@@ -261,7 +270,7 @@ export class MibParser {
       const oidDef = match[3].trim()
 
       const node: MibNode = {
-        id: `node-${++this.nodeIdCounter}`,
+        id: `${moduleName}::${name}`,
         name,
         oid: [],
         oidString: '',
@@ -300,7 +309,7 @@ export class MibParser {
       const oidDef = match[3].trim()
 
       const node: MibNode = {
-        id: `node-${++this.nodeIdCounter}`,
+        id: `${moduleName}::${name}`,
         name,
         oid: [],
         oidString: '',
@@ -337,7 +346,7 @@ export class MibParser {
       const oidDef = match[2].trim()
 
       const node: MibNode = {
-        id: `node-${++this.nodeIdCounter}`,
+        id: `${moduleName}::${name}`,
         name,
         oid: [],
         oidString: '',
@@ -475,6 +484,14 @@ export function buildMibTree(modules: MibModule[]): MibNode[] {
     const key = node.oidString
     if (oidMap.has(key)) {
       const existing = oidMap.get(key)!
+      // If the duplicate shares the same stable id (same module/name parsed
+      // twice, e.g. same MIB loaded from two source directories), it represents
+      // the same logical entity. Skip merging and removal — adding its id to
+      // removedIds would later strip valid child references that point to the
+      // surviving node, since survivor and duplicate share the same id.
+      if (existing.id === node.id) {
+        continue
+      }
       // Merge: keep existing (prefer root), add children from duplicate
       for (const childId of node.children) {
         if (!existing.children.includes(childId)) {
@@ -575,13 +592,11 @@ export function buildMibTree(modules: MibModule[]): MibNode[] {
  * Create the standard MIB root tree nodes
  */
 function createStandardRootNodes(): MibNode[] {
-  let idCounter = 10000
-
   const createNode = (
     name: string, oid: number[], syntax: string, access: MibAccess,
     description: string, kind: MibNodeKind, oidDef: string
   ): MibNode => ({
-    id: `root-${idCounter++}`,
+    id: `root::${name}`,
     name,
     oid,
     oidString: oid.join('.'),
