@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Backend code quality criteria for review"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Ensure no duplicated logic introduced"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Bug 1 spans parser (main) and tree-builder (renderer); verify cross-layer fix is consistent"}

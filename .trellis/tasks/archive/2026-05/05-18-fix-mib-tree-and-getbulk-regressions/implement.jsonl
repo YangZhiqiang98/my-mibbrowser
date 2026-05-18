@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Backend code quality conventions — applies to parser.ts and snmp/client.ts edits"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Error handling conventions for SNMP callback paths"}
+{"file": ".trellis/tasks/archive/2026-05/05-15-mib-tree-dedup-and-cache-location/prd.md", "reason": "Prior dedup/orphan-filter work that assumed unique ids — this task fixes the underlying assumption"}
+{"file": ".trellis/tasks/archive/2026-05/05-15-bugfix-snmp-session-and-mib-tree-ui-issues/prd.md", "reason": "Prior SNMP session bugfix context"}
