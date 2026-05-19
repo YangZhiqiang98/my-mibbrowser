@@ -241,9 +241,22 @@ html, body, #root {
 .node-detail {
   border-top: 1px solid #e8e8e8;
   font-size: 12px;
-  max-height: 220px;
   overflow: auto;
   background: #fafafa;
+  flex-shrink: 0;
+}
+
+/* Vertical resize handle above node detail */
+.detail-resize-handle {
+  height: 4px;
+  cursor: row-resize;
+  background: #e8e8e8;
+  flex-shrink: 0;
+  transition: background 0.2s;
+}
+
+.detail-resize-handle:hover {
+  background: #1890ff;
 }
 
 .node-detail-header {

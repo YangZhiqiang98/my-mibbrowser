@@ -856,13 +856,17 @@ function oidComponentCount(oidStr: string): number {
 export function resolveOidToName(oid: string, nodes: MibNode[]): string {
   if (!oid || nodes.length === 0) return oid
 
+  // net-snmp returns OIDs with a leading dot (e.g. ".1.3.6.1.2.1.1.1.0")
+  // but MIB node oids are stored without it (e.g. "1.3.6.1.2.1.1").
+  const normalized = oid.startsWith('.') ? oid.slice(1) : oid
+
   let bestMatch: MibNode | null = null
   let bestMatchComponents = 0
 
   for (const node of nodes) {
     if (!node.oidString || node.oidString.length === 0) continue
 
-    const matchType = oidMatchesPrefix(oid, node.oidString)
+    const matchType = oidMatchesPrefix(normalized, node.oidString)
     if (matchType === 'none') continue
 
     const components = oidComponentCount(node.oidString)
@@ -875,11 +879,11 @@ export function resolveOidToName(oid: string, nodes: MibNode[]): string {
   if (!bestMatch) return oid
 
   // If exact match, return just the name
-  if (oid === bestMatch.oidString) {
+  if (normalized === bestMatch.oidString) {
     return bestMatch.name
   }
 
   // Otherwise append the instance suffix (skip the dot after bestMatch.oidString)
-  const suffix = oid.substring(bestMatch.oidString.length + 1)
+  const suffix = normalized.substring(bestMatch.oidString.length + 1)
   return `${bestMatch.name}.${suffix}`
 }

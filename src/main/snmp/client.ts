@@ -99,7 +99,7 @@ function formatVarbindValue(varbind: { oid: string; type: number; value: unknown
   }
 
   return {
-    oid: varbind.oid,
+    oid: stripLeadingDot(varbind.oid),
     value: formattedValue,
     type: typeName,
     isError,
@@ -333,6 +333,32 @@ export function snmpSet(config: SnmpConfig, values: SnmpSetValue[]): Promise<Snm
 }
 
 /**
+ * Strip a leading dot from an OID if present, so comparisons are consistent.
+ * net-snmp returns OIDs with a leading dot (e.g. ".1.3.6.1.2.1.1.1.0")
+ * but the MIB tree stores them without (e.g. "1.3.6.1.2.1.1").
+ */
+function stripLeadingDot(oid: string): string {
+  return oid.startsWith('.') ? oid.slice(1) : oid
+}
+
+/**
+ * Check whether a varbind OID is still within the walk subtree rooted at rootOid.
+ *
+ * Compares OID segments (split on `.`) by requiring either an exact match or
+ * `rootOid + '.'` as a prefix. This avoids false positives where one OID is a
+ * lexical prefix of another at non-segment boundaries (e.g. "1.3.6.1.2.1.21"
+ * vs "1.3.6.1.2.1.2").
+ *
+ * Also strips a leading dot from both inputs so net-snmp responses (which use
+ * ".1.3.6...") line up with caller-provided roots (which usually do not).
+ */
+function oidInSubtree(oid: string, rootOid: string): boolean {
+  const normalized = stripLeadingDot(oid)
+  const root = stripLeadingDot(rootOid)
+  return normalized === root || normalized.startsWith(root + '.')
+}
+
+/**
  * Execute an SNMP WALK (GETNEXT loop) operation
  */
 export function snmpWalk(config: SnmpConfig, rootOid: string): Promise<SnmpResult> {
@@ -366,10 +392,11 @@ export function snmpWalk(config: SnmpConfig, rootOid: string): Promise<SnmpResul
           return
         }
 
-        results.push(formatVarbindValue(vb))
-
-        // Check if we've walked past the root OID
-        if (!vb.oid.startsWith(rootOid) && !rootOid.startsWith(vb.oid)) {
+        // Stop as soon as we walk past the requested subtree.
+        // The boundary varbind itself does NOT belong to the result set,
+        // so we must check BEFORE pushing — otherwise empty tables would
+        // leak the next sibling's first instance into the results.
+        if (!oidInSubtree(vb.oid, rootOid)) {
           session.close()
           resolve({
             success: true,
@@ -379,11 +406,16 @@ export function snmpWalk(config: SnmpConfig, rootOid: string): Promise<SnmpResul
           })
           return
         }
+
+        results.push(formatVarbindValue(vb))
       }
 
       // Continue walking
       if (varbinds.length > 0) {
-        const lastOid = (varbinds[varbinds.length - 1] as { oid: string }).oid
+        // net-snmp returns OIDs with a leading dot; strip it before feeding
+        // the OID back into getNext so the request is well-formed regardless
+        // of how net-snmp's input parser treats leading dots.
+        const lastOid = stripLeadingDot((varbinds[varbinds.length - 1] as { oid: string }).oid)
         session.getNext([lastOid], callback)
       } else {
         session.close()
@@ -439,8 +471,11 @@ export function snmpBulkWalk(
           return
         }
 
-        // Check if we've walked past the root OID
-        if (!vb.oid.startsWith(rootOid) && !rootOid.startsWith(vb.oid)) {
+        // Stop as soon as we walk past the requested subtree.
+        // The boundary varbind itself does NOT belong to the result set,
+        // so we must check BEFORE pushing — otherwise empty tables would
+        // leak the next sibling's first instance into the results.
+        if (!oidInSubtree(vb.oid, rootOid)) {
           session.close()
           resolve({
             success: true,
@@ -456,7 +491,8 @@ export function snmpBulkWalk(
       }
 
       if (flat.length > 0 && lastOid) {
-        session.getBulk([lastOid], 0, maxRepetitions, callback)
+        // Strip leading dot before recursing — see snmpWalk for rationale.
+        session.getBulk([stripLeadingDot(lastOid)], 0, maxRepetitions, callback)
       } else {
         session.close()
         resolve({

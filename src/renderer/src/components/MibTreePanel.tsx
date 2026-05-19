@@ -57,46 +57,53 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
   const [isDragOver, setIsDragOver] = useState(false)
   const [searchMatchIds, setSearchMatchIds] = useState<string[]>([])
   const [currentMatchIndex, setCurrentMatchIndex] = useState(0)
+  const [detailHeight, setDetailHeight] = useState(180)
   const treeRef = useRef<{ scrollTo: (info: { key: string }) => void } | null>(null)
+  const isDetailDragging = useRef(false)
+  const detailStartY = useRef(0)
+  const detailStartHeight = useRef(0)
 
-  // When search text changes, find all matching nodes and their ancestors
+  // Debounced search: avoid expensive tree walk on every keystroke / paste
   useEffect(() => {
-    const lowerSearch = searchText.trim().toLowerCase()
-    if (!lowerSearch) {
-      setSearchMatchIds([])
-      setCurrentMatchIndex(0)
-      return
-    }
+    const timerId = setTimeout(() => {
+      const lowerSearch = searchText.trim().toLowerCase()
+      if (!lowerSearch) {
+        setSearchMatchIds([])
+        setCurrentMatchIndex(0)
+        return
+      }
 
-    const matchIds: string[] = []
-    const ancestorIds = new Set<string>()
+      const matchIds: string[] = []
+      const ancestorIds = new Set<string>()
 
-    function collectMatches(nodes: MibTreeNodeData[], ancestors: string[]) {
-      for (const node of nodes) {
-        const isMatch = node.name.toLowerCase().includes(lowerSearch) ||
-          node.oid.toLowerCase().includes(lowerSearch)
-        if (isMatch) {
-          matchIds.push(node.id)
-          for (const a of ancestors) ancestorIds.add(a)
+      function collectMatches(nodes: MibTreeNodeData[], ancestors: string[]) {
+        for (const node of nodes) {
+          const isMatch = node.name.toLowerCase().includes(lowerSearch) ||
+            node.oid.toLowerCase().includes(lowerSearch)
+          if (isMatch) {
+            matchIds.push(node.id)
+            for (const a of ancestors) ancestorIds.add(a)
+          }
+          collectMatches(node.children, [...ancestors, node.id])
         }
-        collectMatches(node.children, [...ancestors, node.id])
       }
-    }
-    collectMatches(mibTree, [])
+      collectMatches(mibTree, [])
 
-    setSearchMatchIds(matchIds)
-    setCurrentMatchIndex(0)
+      setSearchMatchIds(matchIds)
+      setCurrentMatchIndex(0)
 
-    // Expand ancestors of all matches and auto-select the first match
-    if (matchIds.length > 0) {
-      setExpandedKeys(prev => [...new Set([...prev, ...ancestorIds])])
-      // Auto-select the first match so the user can see it
-      const firstMatch = findNodeById(mibTree, matchIds[0])
-      if (firstMatch) {
-        setSelectedNode(firstMatch)
-        setQueryOid(firstMatch.oid)
+      // Expand ancestors of all matches and auto-select the first match
+      if (matchIds.length > 0) {
+        setExpandedKeys(prev => [...new Set([...prev, ...ancestorIds])])
+        const firstMatch = findNodeById(mibTree, matchIds[0])
+        if (firstMatch) {
+          setSelectedNode(firstMatch)
+          setQueryOid(firstMatch.oid)
+        }
       }
-    }
+    }, 150)
+
+    return () => clearTimeout(timerId)
   }, [searchText, mibTree])
 
   // Scroll to current match when cycling through results
@@ -130,6 +137,32 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
     }, 150)
     return () => clearTimeout(timerId)
   }, [currentMatchIndex, searchMatchIds, mibTree])
+
+  // Vertical resize handle for node detail panel
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isDetailDragging.current) return
+      const delta = detailStartY.current - e.clientY
+      const newHeight = Math.min(400, Math.max(80, detailStartHeight.current + delta))
+      setDetailHeight(newHeight)
+    }
+    const handleMouseUp = () => {
+      isDetailDragging.current = false
+    }
+    document.addEventListener('mousemove', handleMouseMove)
+    document.addEventListener('mouseup', handleMouseUp)
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove)
+      document.removeEventListener('mouseup', handleMouseUp)
+    }
+  }, [])
+
+  const handleDetailResizeMouseDown = useCallback((e: React.MouseEvent) => {
+    isDetailDragging.current = true
+    detailStartY.current = e.clientY
+    detailStartHeight.current = detailHeight
+    e.preventDefault()
+  }, [detailHeight])
 
   // Handle Enter key in search input to cycle through matches
   const handleSearchKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -258,8 +291,9 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
 
   const executeSnmpOperation = useCallback(async (
     operation: 'GET' | 'GETNEXT' | 'GETBULK' | 'WALK' | 'BULK_WALK',
-    oid: string
+    node: MibTreeNodeData
   ) => {
+    const oid = node.oid
     if (!oid) {
       message.warning('No OID available for this node')
       return
@@ -285,9 +319,14 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
         case 'GETNEXT':
           result = await window.api.snmp.getNext(snmpConfig, [oid])
           break
-        case 'GETBULK':
-          result = await window.api.snmp.getBulk(snmpConfig, [oid], 10)
+        case 'GETBULK': {
+          // Smart multi-column GETBULK: on a table/entry node, fan out across
+          // every column OID under the entry so a single getBulk returns
+          // rows from all columns. Falls back to single OID for leaves.
+          const oids = resolveBulkOids(node)
+          result = await window.api.snmp.getBulk(snmpConfig, oids, 10)
           break
+        }
         case 'WALK':
           result = await window.api.snmp.walk(snmpConfig, oid)
           break
@@ -341,35 +380,35 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
             icon: <SendOutlined />,
             label: 'GET',
             disabled: !hasOid,
-            onClick: () => executeSnmpOperation('GET', contextMenuNode.oid)
+            onClick: () => executeSnmpOperation('GET', contextMenuNode)
           },
           {
             key: 'snmp-getnext',
             icon: <SwapOutlined />,
             label: 'GETNEXT',
             disabled: !hasOid,
-            onClick: () => executeSnmpOperation('GETNEXT', contextMenuNode.oid)
+            onClick: () => executeSnmpOperation('GETNEXT', contextMenuNode)
           },
           {
             key: 'snmp-getbulk',
             icon: <NodeIndexOutlined />,
             label: 'GETBULK',
             disabled: !hasOid,
-            onClick: () => executeSnmpOperation('GETBULK', contextMenuNode.oid)
+            onClick: () => executeSnmpOperation('GETBULK', contextMenuNode)
           },
           {
             key: 'snmp-walk',
             icon: <ReloadOutlined />,
             label: 'WALK',
             disabled: !hasOid,
-            onClick: () => executeSnmpOperation('WALK', contextMenuNode.oid)
+            onClick: () => executeSnmpOperation('WALK', contextMenuNode)
           },
           {
             key: 'snmp-bulkwalk',
             icon: <ScissorOutlined />,
             label: 'BULK WALK',
             disabled: !hasOid,
-            onClick: () => executeSnmpOperation('BULK_WALK', contextMenuNode.oid)
+            onClick: () => executeSnmpOperation('BULK_WALK', contextMenuNode)
           }
         ]
       },
@@ -585,44 +624,50 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
         )}
       </div>
 
-      {/* Node detail section */}
+      {/* Node detail section with vertical resize handle */}
       {selectedNode && (
-        <div className="node-detail">
-          <div className="node-detail-header">
-            <span className="node-detail-icon">{getNodeIcon(selectedNode.kind)}</span>
-            <span className="node-detail-title">{selectedNode.name}</span>
-            <Tag
-              color={ACCESS_COLOR_MAP[selectedNode.access] || 'default'}
-              style={{ marginLeft: 'auto', fontSize: 11 }}
-            >
-              {selectedNode.access}
-            </Tag>
-          </div>
-          <div className="node-detail-body">
-            <div className="node-detail-row">
-              <span className="node-detail-label">OID</span>
-              <span className="node-detail-value node-detail-oid">{selectedNode.oid || '—'}</span>
+        <>
+          <div
+            className="detail-resize-handle"
+            onMouseDown={handleDetailResizeMouseDown}
+          />
+          <div className="node-detail" style={{ height: `${detailHeight}px` }}>
+            <div className="node-detail-header">
+              <span className="node-detail-icon">{getNodeIcon(selectedNode.kind)}</span>
+              <span className="node-detail-title">{selectedNode.name}</span>
+              <Tag
+                color={ACCESS_COLOR_MAP[selectedNode.access] || 'default'}
+                style={{ marginLeft: 'auto', fontSize: 11 }}
+              >
+                {selectedNode.access}
+              </Tag>
             </div>
-            <div className="node-detail-row">
-              <span className="node-detail-label">Syntax</span>
-              <span className="node-detail-value">{selectedNode.syntax || '—'}</span>
-            </div>
-            <div className="node-detail-row">
-              <span className="node-detail-label">Kind</span>
-              <span className="node-detail-value">{selectedNode.kind || '—'}</span>
-            </div>
-            <div className="node-detail-row">
-              <span className="node-detail-label">Module</span>
-              <span className="node-detail-value">{selectedNode.module || '—'}</span>
-            </div>
-            {selectedNode.description && (
-              <div className="node-detail-row node-detail-desc">
-                <span className="node-detail-label">Description</span>
-                <span className="node-detail-value">{selectedNode.description}</span>
+            <div className="node-detail-body">
+              <div className="node-detail-row">
+                <span className="node-detail-label">OID</span>
+                <span className="node-detail-value node-detail-oid">{selectedNode.oid || '—'}</span>
               </div>
-            )}
+              <div className="node-detail-row">
+                <span className="node-detail-label">Syntax</span>
+                <span className="node-detail-value">{selectedNode.syntax || '—'}</span>
+              </div>
+              <div className="node-detail-row">
+                <span className="node-detail-label">Kind</span>
+                <span className="node-detail-value">{selectedNode.kind || '—'}</span>
+              </div>
+              <div className="node-detail-row">
+                <span className="node-detail-label">Module</span>
+                <span className="node-detail-value">{selectedNode.module || '—'}</span>
+              </div>
+              {selectedNode.description && (
+                <div className="node-detail-row node-detail-desc">
+                  <span className="node-detail-label">Description</span>
+                  <span className="node-detail-value">{selectedNode.description}</span>
+                </div>
+              )}
+            </div>
           </div>
-        </div>
+        </>
       )}
     </div>
   )
@@ -692,6 +737,34 @@ function findNodeById(nodes: MibTreeNodeData[], id: string): MibTreeNodeData | n
     if (found) return found
   }
   return null
+}
+
+/**
+ * Resolve the list of OIDs to send in a GETBULK request for the given node.
+ *
+ * For a table node, expand to every column OID under the (single) entry child.
+ * For an entry node, return every column OID directly under it.
+ * For any leaf / scalar / column / unrecognized node, fall back to the node's
+ * own OID. The fallback also covers tables/entries without column children so
+ * the caller always gets at least one OID to send.
+ */
+function resolveBulkOids(node: MibTreeNodeData): string[] {
+  if (node.kind === 'table') {
+    const entry = node.children.find((child) => child.kind === 'entry')
+    if (entry) {
+      const columnOids = entry.children
+        .filter((child) => child.kind === 'column' && !!child.oid)
+        .map((child) => child.oid)
+      if (columnOids.length > 0) return columnOids
+    }
+  } else if (node.kind === 'entry') {
+    const columnOids = node.children
+      .filter((child) => child.kind === 'column' && !!child.oid)
+      .map((child) => child.oid)
+    if (columnOids.length > 0) return columnOids
+  }
+
+  return [node.oid]
 }
 
 /**
