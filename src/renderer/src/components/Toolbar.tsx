@@ -117,9 +117,10 @@ export function Toolbar(): React.ReactElement {
 
   const profileMenuItems = profiles.map(p => ({
     key: p.id,
+    onClick: () => handleLoadProfile(p),
     label: (
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minWidth: 200 }}>
-        <span onClick={() => handleLoadProfile(p)}>{p.name}</span>
+        <span>{p.name}</span>
         <DeleteOutlined
           style={{ color: '#ff4d4f', fontSize: 12 }}
           onClick={(e) => { e.stopPropagation(); handleDeleteProfile(p.id) }}

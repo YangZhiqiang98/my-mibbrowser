@@ -179,6 +179,11 @@ html, body, #root {
   margin-bottom: 12px;
 }
 
+/* PR3 — clickable collapse header for QueryPanel */
+.query-panel .query-panel-title:hover {
+  color: #1890ff;
+}
+
 .query-form {
   display: flex;
   flex-wrap: wrap;
@@ -396,6 +401,23 @@ html, body, #root {
 
 .resize-handle:hover {
   background: #1890ff;
+}
+
+/* Results table — hand-rolled column resize handle */
+.results-col-resize-handle {
+  background: transparent;
+  transition: background 0.15s;
+}
+
+.results-col-resize-handle:hover,
+.results-col-resize-handle:active {
+  background: #1890ff;
+  opacity: 0.6;
+}
+
+/* Results table — column header drag affordance */
+.results-table-container .ant-table-thead > tr > th[draggable="true"]:hover {
+  background: #fafafa;
 }
 
 /* Scrollbar styling */

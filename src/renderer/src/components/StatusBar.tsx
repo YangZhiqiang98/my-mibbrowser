@@ -5,8 +5,15 @@ export function StatusBar(): React.ReactElement {
   const connectionStatus = useAppStore((s) => s.connectionStatus)
   const statusMessage = useAppStore((s) => s.statusMessage)
   const config = useAppStore((s) => s.snmpConfig)
-  const resultsCount = useAppStore((s) => s.results.length)
+  // PR3: results count now derives from the current dynamic-column session so
+  // it matches what ResultsPanel actually renders. The legacy `s.results`
+  // array is a permanent empty shim (PR2 deferred its removal) so it cannot
+  // surface zero-vs-N truth.
+  const currentResult = useAppStore((s) => s.currentResult)
   const loadedModules = useAppStore((s) => s.loadedModules)
+
+  const resultsCount = currentResult?.rows.length ?? 0
+  const isEmptyResultSession = currentResult !== null && currentResult.rows.length === 0
 
   const statusLabel = {
     disconnected: 'Ready',
@@ -23,6 +30,9 @@ export function StatusBar(): React.ReactElement {
           {statusLabel[connectionStatus]}
         </span>
         <span>{statusMessage}</span>
+        {isEmptyResultSession && (
+          <span style={{ color: '#fa8c16' }}>本次操作结果为空</span>
+        )}
       </div>
       <div className="status-bar-right">
         <span>Host: {config.host}:{config.port}</span>

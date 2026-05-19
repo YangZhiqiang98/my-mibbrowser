@@ -3,12 +3,12 @@ import { Input, Select, Button, InputNumber, Space, message, Tooltip } from 'ant
 import {
   SendOutlined,
   SearchOutlined,
-  ClearOutlined
+  ClearOutlined,
+  RightOutlined
 } from '@ant-design/icons'
 import { useAppStore } from '../stores/appStore'
-import { formatBytesToString } from '../utils/formatBytes'
+import { buildResultSession } from '../utils/resultColumns'
 import type { SnmpOperation } from '../../../main/snmp/types'
-import type { ResultRow } from '../types'
 
 export function QueryPanel(): React.ReactElement {
   const config = useAppStore((s) => s.snmpConfig)
@@ -16,8 +16,8 @@ export function QueryPanel(): React.ReactElement {
   const setQueryOid = useAppStore((s) => s.setQueryOid)
   const queryOperation = useAppStore((s) => s.queryOperation)
   const setQueryOperation = useAppStore((s) => s.setQueryOperation)
-  const addResults = useAppStore((s) => s.addResults)
-  const clearResults = useAppStore((s) => s.clearResults)
+  const mibTree = useAppStore((s) => s.mibTree)
+  const setResult = useAppStore((s) => s.setResult)
   const isQuerying = useAppStore((s) => s.isQuerying)
   const setIsQuerying = useAppStore((s) => s.setIsQuerying)
   const setStatusMessage = useAppStore((s) => s.setStatusMessage)
@@ -26,6 +26,9 @@ export function QueryPanel(): React.ReactElement {
   const [maxRepetitions, setMaxRepetitions] = useState(10)
   const [setValue, setSetValue] = useState('')
   const [setType, setSetType] = useState('OCTET STRING')
+  // PR3 — QueryPanel defaults to collapsed; session-local only (not persisted).
+  // Acts as the "I know the OID but don't want to navigate the tree" entrypoint.
+  const [collapsed, setCollapsed] = useState(true)
 
   const isSetOperation = queryOperation === 'SET'
   const isBulkOperation = queryOperation === 'GETBULK' || queryOperation === 'BULK_WALK'
@@ -36,6 +39,10 @@ export function QueryPanel(): React.ReactElement {
       return
     }
 
+    // Overwrite semantics (PR2): the moment the user clicks Send, drop any
+    // prior session and flip loading so the table reflects "fetching" before
+    // the response arrives.
+    setResult(null)
     setIsQuerying(true)
     setConnectionStatus('connecting')
     setStatusMessage(`Executing ${queryOperation}...`)
@@ -87,20 +94,13 @@ export function QueryPanel(): React.ReactElement {
 
       if (result.success) {
         setConnectionStatus('connected')
-        const rows: ResultRow[] = result.varbinds.map((vb, idx) => ({
-          key: `${result.timestamp}-${idx}`,
-          oid: vb.oid,
-          name: vb.name || '',
-          value: formatValue(vb.value, vb.type),
-          type: vb.type,
-          status: vb.isError ? 'error' as const : 'success' as const,
-          timestamp: new Date(result.timestamp).toLocaleTimeString(),
-          responseTime: result.responseTime
-        }))
-
-        addResults(rows)
+        const session = buildResultSession(queryOperation, oids[0] ?? '', result, mibTree)
+        setResult(session)
+        // PR3 — empty-result status text suffix so the status bar surfaces
+        // "no data" without resorting to a modal / toast.
+        const baseMsg = `${queryOperation}: ${session.rows.length} result(s), ${result.responseTime}ms`
         setStatusMessage(
-          `${queryOperation}: ${rows.length} result(s), ${result.responseTime}ms`
+          session.rows.length === 0 ? `${baseMsg} — 本次操作结果为空` : baseMsg
         )
       } else {
         setConnectionStatus('error')
@@ -115,12 +115,12 @@ export function QueryPanel(): React.ReactElement {
     } finally {
       setIsQuerying(false)
     }
-  }, [config, queryOid, queryOperation, maxRepetitions, setValue, setType])
+  }, [config, queryOid, queryOperation, maxRepetitions, setValue, setType, mibTree, setResult, setIsQuerying, setConnectionStatus, setStatusMessage])
 
   const handleClear = useCallback(() => {
-    clearResults()
+    setResult(null)
     setStatusMessage('Results cleared')
-  }, [clearResults, setStatusMessage])
+  }, [setResult, setStatusMessage])
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !isQuerying) {
@@ -130,9 +130,31 @@ export function QueryPanel(): React.ReactElement {
 
   return (
     <div className="query-panel">
-      <h3>
-        <SearchOutlined /> SNMP Query
+      <h3
+        className="query-panel-title"
+        onClick={() => setCollapsed((c) => !c)}
+        style={{
+          cursor: 'pointer',
+          userSelect: 'none',
+          display: 'flex',
+          alignItems: 'center',
+          // When collapsed, drop the bottom margin so the panel collapses
+          // visually to a single header row.
+          marginBottom: collapsed ? 0 : undefined
+        }}
+      >
+        <SearchOutlined />
+        <span style={{ marginLeft: 4 }}>SNMP Query</span>
+        <RightOutlined
+          style={{
+            marginLeft: 8,
+            fontSize: 12,
+            transform: collapsed ? 'none' : 'rotate(90deg)',
+            transition: 'transform 0.2s'
+          }}
+        />
       </h3>
+      {!collapsed && (
       <div className="query-form">
         <div className="query-form-item">
           <label>OID</label>
@@ -233,43 +255,7 @@ export function QueryPanel(): React.ReactElement {
           </Space>
         </div>
       </div>
+      )}
     </div>
   )
-}
-
-/**
- * Format a varbind value for display
- */
-function formatValue(value: string | number | Buffer | null, type: string): string {
-  if (value === null || value === undefined) return ''
-
-  // Handle serialized Buffer from IPC: { type: 'Buffer', data: number[] }
-  if (typeof value === 'object' && !Array.isArray(value)) {
-    const obj = value as unknown as Record<string, unknown>
-    if (obj.type === 'Buffer' && Array.isArray(obj.data)) {
-      const bytes = obj.data as number[]
-      return formatBytesToString(bytes, type)
-    }
-    if (typeof (value as Buffer).length === 'number' && typeof (value as Buffer)[0] !== 'undefined') {
-      const bytes = Array.from(value as Buffer)
-      return formatBytesToString(bytes, type)
-    }
-    try {
-      return JSON.stringify(value)
-    } catch {
-      return String(value)
-    }
-  }
-
-  if (type === 'TimeTicks') {
-    const ticks = Number(value)
-    const days = Math.floor(ticks / 8640000)
-    const hours = Math.floor((ticks % 8640000) / 360000)
-    const minutes = Math.floor((ticks % 360000) / 6000)
-    const seconds = Math.floor((ticks % 6000) / 100)
-    const hundredths = ticks % 100
-    return `${days}d ${hours}h ${minutes}m ${seconds}.${hundredths}s`
-  }
-
-  return String(value)
 }

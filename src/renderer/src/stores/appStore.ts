@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { ResultRow, ProfileItem, MibTreeNodeData } from '../types'
+import type { ResultRow, ProfileItem, MibTreeNodeData, ResultSession } from '../types'
 import type { SnmpConfig, SnmpOperation } from '../../../main/snmp/types'
 
 interface AppState {
@@ -17,6 +17,16 @@ interface AppState {
   queryOperation: SnmpOperation
 
   // Results
+  /**
+   * Current dynamic-column result session (PR2 — single-session overwrite
+   * semantics). Cleared to null when a new operation starts.
+   */
+  currentResult: ResultSession | null
+  /**
+   * Legacy result rows. Kept as an empty stub so any downstream consumers
+   * that still read this field don't crash. PR2 stops writing to it; full
+   * removal is deferred to a later cleanup PR.
+   */
   results: ResultRow[]
   isQuerying: boolean
 
@@ -37,6 +47,10 @@ interface AppState {
   setQueryOid: (oid: string) => void
   setQueryOperation: (op: SnmpOperation) => void
 
+  setResult: (session: ResultSession | null) => void
+  // Legacy result actions — retained as no-op-friendly stubs so callers
+  // outside the PR2 scope continue to type-check. The new write path is
+  // setResult only.
   addResult: (row: ResultRow) => void
   addResults: (rows: ResultRow[]) => void
   clearResults: () => void
@@ -73,6 +87,7 @@ export const useAppStore = create<AppState>((set) => ({
   snmpConfig: { ...defaultConfig },
   queryOid: '',
   queryOperation: 'GET',
+  currentResult: null,
   results: [],
   isQuerying: false,
   profiles: [],
@@ -96,12 +111,15 @@ export const useAppStore = create<AppState>((set) => ({
   setQueryOid: (oid) => set({ queryOid: oid }),
   setQueryOperation: (op) => set({ queryOperation: op }),
 
-  // Results actions
+  // Results actions — PR2 unified write path
+  setResult: (session) => set({ currentResult: session }),
+  // Legacy result actions — preserved as no-op shims so any out-of-scope
+  // callers continue to compile. New code must use setResult instead.
   addResult: (row) =>
     set((state) => ({ results: [...state.results, row] })),
   addResults: (rows) =>
     set((state) => ({ results: [...state.results, ...rows] })),
-  clearResults: () => set({ results: [] }),
+  clearResults: () => set({ results: [], currentResult: null }),
   setIsQuerying: (v) => set({ isQuerying: v }),
 
   // Profile actions

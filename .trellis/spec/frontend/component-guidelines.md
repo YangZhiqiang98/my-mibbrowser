@@ -75,3 +75,29 @@ export function QueryPanel({ onSubmit }: QueryPanelProps): React.ReactElement {
 - Do not import types from `electron` in renderer code — use `window.api` and renderer-side types only.
 - Do not use `useState` for data that multiple components need — use the Zustand store instead.
 - Do not put business logic in components — extract to utils or store actions.
+
+---
+
+## Constraint: AntD Dropdown Menu Item Clicks Must Use Item-Level or Dropdown-Level Handlers
+
+When wiring click handling for an Ant Design `<Dropdown menu={{ items }}>`, the click handler must be attached at **one of two places only**:
+
+1. The menu item descriptor itself: `{ key, label, icon, onClick: () => fn() }`.
+2. The dropdown-level handler: `<Dropdown menu={{ items, onClick: ({ key }) => fn(key) }}>`.
+
+Do not rely on an `onClick` baked into a React node passed as `label` (e.g. `label: <span onClick={fn}>...</span>`). It will not fire.
+
+### Why
+
+In AntD v5/v6, the menu's click path runs item-level / dropdown-level handlers and then closes the popup. The popup unmount cancels event propagation to any inline handler inside the rendered `label` node before it can fire. The visible symptom is "the menu opens, the item highlights on hover, clicking it closes the menu, but nothing happens" — the action looks wired up and partially does work (the dropdown closes), so the failure is easy to miss in casual smoke tests.
+
+This is **not** a generic React event-bubbling issue you can paper over with `stopPropagation` — by the time the `label` subtree would see the click, the popup is already being torn down.
+
+### How to Apply
+
+- Every actionable menu entry under a `<Dropdown menu={{ items }}>` must declare its action via `items[i].onClick` or the dropdown-level `menu.onClick`. Pick one style per menu and stay consistent — mixing both makes it ambiguous which fires first.
+- If the `label` of a menu item embeds an additional, **independently-clickable** affordance (e.g. a "delete" icon inside an otherwise-selectable row), that inner control's `onClick` must call `e.stopPropagation()` so the item-level handler does not also fire. The inner handler still works because the inner control is part of the static menu DOM, not the dismissal sequence — but only when it stops the bubble.
+- The same rule applies to `<Menu items={...}>` used outside `Dropdown` (e.g. inside a popover or a manually-positioned overlay) where the surrounding popup dismisses on item click.
+- Anchors with current canonical usage:
+  - `src/renderer/src/components/Toolbar.tsx` — `profileMenuItems` (profile apply via item-level `onClick`).
+  - `src/renderer/src/components/MibTreePanel.tsx` — `contextMenuItems` (right-click SNMP operations and SET, all via item-level `onClick`).

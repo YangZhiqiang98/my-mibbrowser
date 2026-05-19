@@ -42,9 +42,96 @@ Single-OID GETBULK is still correct on a `column` or `scalar`, because there is 
 
 ---
 
+## Constraint: SNMP Operation Results Go Through a Single Write Path
+
+Every renderer-side entry point that fires an SNMP request must funnel its outcome through the same sequence and through `buildResultSession` + `appStore.setResult`. The result panel is overwrite-style — each new operation replaces the previous session — and there are multiple trigger sites (`QueryPanel.handleSend`, `MibTreePanel.executeSnmpOperation`, `MibTreePanel.handleSetConfirm`, and any future toolbar / keyboard / drag affordance). If each site rolls its own `setStatus` + ad-hoc varbind formatting, the panel desynchronizes: some paths leave stale rows visible during the next query, others format types inconsistently, and error states diverge.
+
+### Required Sequence
+
+```typescript
+setResult(null)                          // 1. clear previous session immediately
+setIsQuerying(true)                      // 2. flip the busy flag
+setConnectionStatus('connecting')        // 3. status pill reflects in-flight call
+try {
+  const result = await window.api.snmp.<op>(...)
+  if (result.success) {
+    const session = buildResultSession(op, rootOid, result, mibTree)
+    setResult(session)                   // 4. single write of the new session
+    setStatusMessage(/* per-op summary */)
+  } else {
+    appMessage.error(result.error)
+    setStatusMessage(`Error: ${result.error}`)
+  }
+} finally {
+  setIsQuerying(false)                   // 5. always clear busy flag
+}
+```
+
+### Why
+
+- **Overwrite semantics depend on step 1 firing every time.** If a trigger site forgets `setResult(null)`, the old session lingers under the loading spinner and reappears if the new call fails. Users read this as "the new request silently succeeded with old data".
+- **Formatting consistency lives in `buildResultSession`.** It is the only place that knows how to assemble `ResultColumn[]` headers, fold varbinds into rows by instance, and run `formatVarbindValue` per type. Earlier revisions of this codebase had two inline `formatValue` / `formatVarbindValue` copies that drifted apart — that mistake is the reason this constraint exists.
+- **Status / error wiring is part of the contract.** A trigger that fires `setResult` but forgets `setStatusMessage` leaves the StatusBar showing the previous operation's summary, which is worse than no message at all.
+
+### How to Apply
+
+- Constructing a `ResultRow` or `ResultColumn` literal inside any component is forbidden. The only producer is `buildResultSession` in `src/renderer/src/utils/resultColumns.ts`. If a new operation shape needs different column-resolution logic, extend `buildResultSession` (or add a sibling helper next to it) — do not inline.
+- `appStore.setResult` is the only allowed writer for `currentResult`. The legacy `addResult` / `addResults` setters and the `results: ResultRow[]` field are kept as compile-only shims for the old transcript view; do not introduce new callers. `clearResults` is the only other path that touches `currentResult` and it sets it to `null`.
+- Failure handling uses `appMessage.error(result.error)` plus `setStatusMessage('Error: …')`. Do not call `setResult(emptySession)` to "show" an error — leave `currentResult` as `null` so the empty-state UI renders.
+- New trigger sites (e.g. a future "rerun last operation" button) reuse this exact sequence. Pulling it into a `useSnmpOperation` hook is acceptable as long as every caller of that hook ends up at `setResult` + `buildResultSession`.
+
+---
+
+## Constraint: SNMP SET Authority Is the Device Response, Not the MIB `access` Field
+
+The MIB `access` attribute (`read-only`, `read-write`, `read-create`, `not-accessible`, `accessible-for-notify`) declares the **MIB author's stated semantics**, not the runtime writability of any particular device. A node marked `read-write` can be refused by a device that protects it through a separate mechanism; a node marked `read-only` can be writable on a vendor that ships extensions. The same gap applies to reads on `not-accessible` rows.
+
+UI must therefore not pre-filter operations based on `node.access`. The only allowed UI gate is "we don't have an OID to operate on" (`!hasOid`). Everything else — including SET on a `read-only` node — is offered to the user, sent to the device, and resolved by the response.
+
+### Why
+
+- Pre-filtering by `access` blocks users from confirming what their device actually does. The MIB browser is the diagnostic surface; refusing the request locally defeats the purpose.
+- Devices regularly disagree with their own MIBs. A SET that the MIB declares legal may still return `noAccess` / `notWritable` / `authorizationError`; a SET that the MIB declares illegal may still succeed when the vendor extended the table. Both directions need to be observable.
+- The error-rendering path is already symmetric for protocol-level rejections (Constraint above): on `result.success === false`, `appMessage.error(result.error)` + `setStatusMessage('Error: …')` covers refused SETs and refused GETs identically. Adding a UI-side gate would create a third class of "request never sent" that bypasses this and looks indistinguishable from a connection failure.
+
+### How to Apply
+
+- Right-click menu items in `MibTreePanel.tsx` (`contextMenuItems`) set `disabled` based on `!hasOid` only. Do not add `node.access === 'read-only'` (or any `access`-based predicate) to a `disabled` expression for GET / GETNEXT / WALK / BULK_WALK / SET.
+- The SET dialog (`setModalNode` flow → `handleSetConfirm`) is reachable from any node with an OID. Type / value validation belongs inside the modal, not in the menu gate.
+- If a future affordance wants to *hint* at expected writability (e.g. a tooltip "MIB declares this read-only"), render it as a non-blocking annotation. The action stays enabled.
+- This rule does not override transport-level guards. Missing community string / unreachable host still blocks at `window.api.snmp.*` and surfaces through the same error path — those are not `access`-driven decisions.
+
+---
+
+## Constraint: Result-Column Resolution Uses Longest-Prefix MIB Matching on Segment Boundaries
+
+`resolveOidToColumn(varbindOid, mibTree)` in `src/renderer/src/utils/resultColumns.ts` decides, for each varbind in a response, which column it belongs to and what its instance suffix is. The result panel's correctness — table shape, row grouping, header labels — depends entirely on this function. Two properties are mandatory.
+
+### Required Properties
+
+1. **Segment-boundary prefix match**: a candidate MIB OID `prefix` matches a varbind OID `oid` iff `oid === prefix || oid.startsWith(prefix + '.')`. Reuse the same predicate shape as `oidInSubtree` in `src/main/snmp/client.ts` (see [`backend/snmp-guidelines.md`](../backend/snmp-guidelines.md) Constraint 1). Raw `String.startsWith` without the dot guard is wrong.
+2. **Longest-prefix wins**: when multiple MIB nodes match, the deepest (most OID segments) is chosen. The canonical implementation flattens the MIB tree, sorts by segment count descending, and picks the first hit.
+
+### Why
+
+- **Without the segment-boundary check**, `1.3.6.1.2.1.2` (ifTable) lexically captures every OID under sibling subtrees like `1.3.6.1.2.1.20`, `1.3.6.1.2.1.21`, etc. Every varbind from those subtrees would be misclassified into the ifTable column, producing nonsense rows with mixed-source data. This is the same bug class that motivated `oidInSubtree` on the backend.
+- **Without longest-prefix-wins**, a fully-qualified instance OID like `1.3.6.1.2.1.2.2.1.2.1` matches *both* the column (`...2.2.1.2`) and every ancestor (`...2.2.1`, `...2.2`, `...2`, `...`) up to the MIB root. Picking any of the ancestors collapses the whole table into a single "group" column where every row shares the same `columnKey`, and the row-grouping by instance falls apart.
+
+### How to Apply
+
+- Container helpers used inside `resolveOidToColumn` (`isOidWithinPrefix`, `suffixAfterPrefix`, `flattenMibTree`) are local to `src/renderer/src/utils/resultColumns.ts`. Any new column-resolution logic — including any future "group by parent table" or "merge sub-columns" feature — extends this file and reuses these helpers. Do not duplicate them in components.
+- Flattening must keep the segment-count sort. If a future refactor switches `flattenMibTree` to lazy iteration, the sort property still has to hold at the consumer of the iterator.
+- The fallback path (no MIB match) must produce a non-empty `columnKey` and `columnName`. The current shape uses `oid.lastIndexOf('.')` to split into `(prefix, instance)`, with the instance suffix being the final segment. A single-segment OID (rare but legal in malformed responses) must not throw — return the whole OID as both `columnKey` and a `columnName` of the OID itself, with empty `instance`. Crashing here would break the result panel for the entire session.
+- Cross-layer parity: the segment-boundary rule used here is **the same predicate** the backend uses to terminate walks. Treat them as one rule with two implementations. If either side relaxes the rule (e.g. to support a non-numeric OID component), the other side must follow in the same change — otherwise walk termination and column resolution disagree on what "in subtree" means and the result panel desyncs from the protocol layer.
+
+---
+
 ## Cross-References
 
-- `src/renderer/src/components/MibTreePanel.tsx` — `resolveBulkOids` helper and right-click GETBULK handler.
+- `src/renderer/src/components/MibTreePanel.tsx` — `resolveBulkOids` helper, right-click GETBULK handler, `executeSnmpOperation`, `handleSetConfirm`, `contextMenuItems`.
+- `src/renderer/src/components/QueryPanel.tsx` — `handleSend` (third trigger site that must follow the single-write-path sequence).
+- `src/renderer/src/utils/resultColumns.ts` — `resolveOidToColumn`, `buildResultSession`, `formatVarbindValue` (renderer-side). Single producer of `ResultSession`.
+- `src/renderer/src/stores/appStore.ts` — `setResult` is the only allowed writer of `currentResult`; legacy `addResult` / `addResults` / `results` are compile-only shims.
 - `src/main/snmp/client.ts` — `snmpGetBulk` accepts a multi-OID repeaters list; see also `flattenBulkVarbinds` for how the response rows are interleaved.
-- [`backend/snmp-guidelines.md`](../backend/snmp-guidelines.md) — Protocol-layer rules for OID comparison and walk termination. Any UI that drives walks (not just bulk) inherits those rules through the main process API.
-- [component-guidelines.md](./component-guidelines.md) — General component patterns for `MibTreePanel.tsx`.
+- [`backend/snmp-guidelines.md`](../backend/snmp-guidelines.md) — Protocol-layer rules for OID comparison and walk termination. The segment-boundary rule used in `resolveOidToColumn` is the same rule used by `oidInSubtree` — keep them in sync.
+- [component-guidelines.md](./component-guidelines.md) — General component patterns for `MibTreePanel.tsx`, plus the AntD Dropdown menu item click constraint that the right-click menu and `Toolbar.tsx` profile menu both depend on.
