@@ -1,0 +1,6 @@
+{"file": ".trellis/tasks/05-19-fix-result-panel-and-snmp-edge-cases/prd.md", "reason": "Authoritative AC list to verify against"}
+{"file": ".trellis/spec/backend/snmp-guidelines.md", "reason": "Verify column GETBULK iteration respects subtree boundary + leading-dot rules; verify walk loop ordering not violated"}
+{"file": ".trellis/spec/frontend/mib-tree-snmp-ops.md", "reason": "Verify resolveBulkOids contract still holds for table/entry; verify column branch behaves per spec"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Frontend quality bar (typecheck / lint / a11y on Modal / Empty state)"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Backend quality bar — only applies if IPC changes are required (PRD avoids them)"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "Verify appStore refactor (ResultSession) keeps selector hygiene and immutability conventions"}

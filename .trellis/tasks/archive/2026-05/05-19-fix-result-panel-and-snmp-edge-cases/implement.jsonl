@@ -1,0 +1,6 @@
+{"file": ".trellis/tasks/05-19-fix-result-panel-and-snmp-edge-cases/prd.md", "reason": "Authoritative requirements / AC / implementation plan for this task"}
+{"file": ".trellis/spec/backend/snmp-guidelines.md", "reason": "Invariants for OID subtree boundary, leading-dot normalization, walk loop ordering — must not regress when extending column GETBULK to iterate"}
+{"file": ".trellis/spec/frontend/mib-tree-snmp-ops.md", "reason": "Existing resolveBulkOids contract for table/entry multi-OID GETBULK; column GETBULK iteration is an extension of this layer"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "appStore conventions — needed when refactoring results: ResultRow[] -> currentResult: ResultSession"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "Component patterns — needed when restructuring ResultsPanel (dynamic columns), QueryPanel (collapse wrapper), MibTreePanel (SET menu + Modal)"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "Type discipline for new ResultSession / ResultCell shapes and resolveOidToColumn helper"}
