@@ -307,3 +307,36 @@ Five UX/SNMP fixes in one task. (1) Column-node GETBULK now iterates via bulkWal
 ### Next Steps
 
 - None - task complete
+
+
+## Session 9: Fix search Enter trigger, walk errors, GETBULK filter, table style
+
+**Date**: 2026-05-19
+**Task**: Fix search Enter trigger, walk errors, GETBULK filter, table style
+**Branch**: `master`
+
+### Summary
+
+Search改为Enter触发; snmpWalk/BulkWalk区分endOfMibView与noSuchInstance; GETBULK添加子树varbind过滤; 表格边框+粘性Instance列; 列头类型作为副标题
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `aeeb7a6` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
