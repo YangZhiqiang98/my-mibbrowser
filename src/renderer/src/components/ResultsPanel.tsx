@@ -117,7 +117,12 @@ export function ResultsPanel(): React.ReactElement {
     for (const col of orderedColumns) {
       const width = columnWidths[col.key] ?? DEFAULT_COLUMN_WIDTH
       const column: ColumnType<ResultRowData> = {
-        title: `${col.name} (${col.type})`,
+        title: (
+          <Tooltip title={`Type: ${col.type}`} placement="top">
+            <span>{col.name}</span>
+            <span style={{ display: 'block', fontSize: 10, color: '#999', fontWeight: 'normal' }}>{col.type}</span>
+          </Tooltip>
+        ),
         key: col.key,
         dataIndex: ['cells', col.key],
         width,
@@ -188,7 +193,7 @@ export function ResultsPanel(): React.ReactElement {
     return sessionRows.map((row) => {
       const out: Record<string, string> = { Instance: row.instance }
       for (const col of orderedColumns) {
-        const header = `${col.name} (${col.type})`
+        const header = `${col.name} [${col.type}]`
         const cell = row.cells[col.key]
         out[header] = cell ? (cell.isError ? cell.errorTag || 'error' : cell.value) : ''
       }
@@ -198,7 +203,7 @@ export function ResultsPanel(): React.ReactElement {
 
   const buildTsv = useCallback(
     (rowsSubset: ResultRowData[]): string => {
-      const header = ['Instance', ...orderedColumns.map((c) => `${c.name} (${c.type})`)].join('\t')
+      const header = ['Instance', ...orderedColumns.map((c) => `${c.name} [${c.type}]`)].join('\t')
       const lines = rowsSubset.map((row) => {
         const cells = [row.instance, ...orderedColumns.map((c) => {
           const cell = row.cells[c.key]

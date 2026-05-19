@@ -211,7 +211,18 @@ export function buildResultSession(
   const rowOrder: string[] = []
   const rowsByKey = new Map<string, ResultRowData>()
 
-  for (const vb of response.varbinds) {
+  // Filter varbinds to only include those within the rootOid subtree.
+  // Raw GETBULK returns "next" OIDs that may cross into unrelated tables.
+  const rootOidNorm = normalizeOid(rootOid)
+  const filteredVarbinds = response.varbinds.filter((vb) => {
+    // WALK / BULK_WALK already filter by subtree; also allow scalar GETs
+    // where the returned OID exactly matches the root.
+    if (operation === 'WALK' || operation === 'BULK_WALK') return true
+    const oid = normalizeOid(vb.oid)
+    return oid === rootOidNorm || oid.startsWith(rootOidNorm + '.')
+  })
+
+  for (const vb of filteredVarbinds) {
     const resolved = resolveOidToColumn(vb.oid, flattened)
     const { columnKey, columnName, oidPrefix, instance } = resolved
 

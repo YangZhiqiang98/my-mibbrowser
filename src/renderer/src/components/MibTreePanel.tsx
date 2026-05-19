@@ -70,48 +70,44 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
   const detailStartY = useRef(0)
   const detailStartHeight = useRef(0)
 
-  // Debounced search: avoid expensive tree walk on every keystroke / paste
-  useEffect(() => {
-    const timerId = setTimeout(() => {
-      const lowerSearch = searchText.trim().toLowerCase()
-      if (!lowerSearch) {
-        setSearchMatchIds([])
-        setCurrentMatchIndex(0)
-        return
-      }
-
-      const matchIds: string[] = []
-      const ancestorIds = new Set<string>()
-
-      function collectMatches(nodes: MibTreeNodeData[], ancestors: string[]) {
-        for (const node of nodes) {
-          const isMatch = node.name.toLowerCase().includes(lowerSearch) ||
-            node.oid.toLowerCase().includes(lowerSearch)
-          if (isMatch) {
-            matchIds.push(node.id)
-            for (const a of ancestors) ancestorIds.add(a)
-          }
-          collectMatches(node.children, [...ancestors, node.id])
-        }
-      }
-      collectMatches(mibTree, [])
-
-      setSearchMatchIds(matchIds)
+  // Perform MIB tree search: find matching nodes, expand ancestors, and select first match
+  const performSearch = useCallback((query: string) => {
+    const lowerSearch = query.trim().toLowerCase()
+    if (!lowerSearch) {
+      setSearchMatchIds([])
       setCurrentMatchIndex(0)
+      return
+    }
 
-      // Expand ancestors of all matches and auto-select the first match
-      if (matchIds.length > 0) {
-        setExpandedKeys(prev => [...new Set([...prev, ...ancestorIds])])
-        const firstMatch = findNodeById(mibTree, matchIds[0])
-        if (firstMatch) {
-          setSelectedNode(firstMatch)
-          setQueryOid(firstMatch.oid)
+    const matchIds: string[] = []
+    const ancestorIds = new Set<string>()
+
+    function collectMatches(nodes: MibTreeNodeData[], ancestors: string[]) {
+      for (const node of nodes) {
+        const isMatch = node.name.toLowerCase().includes(lowerSearch) ||
+          node.oid.toLowerCase().includes(lowerSearch)
+        if (isMatch) {
+          matchIds.push(node.id)
+          for (const a of ancestors) ancestorIds.add(a)
         }
+        collectMatches(node.children, [...ancestors, node.id])
       }
-    }, 150)
+    }
+    collectMatches(mibTree, [])
 
-    return () => clearTimeout(timerId)
-  }, [searchText, mibTree])
+    setSearchMatchIds(matchIds)
+    setCurrentMatchIndex(0)
+
+    // Expand ancestors of all matches and auto-select the first match
+    if (matchIds.length > 0) {
+      setExpandedKeys(prev => [...new Set([...prev, ...ancestorIds])])
+      const firstMatch = findNodeById(mibTree, matchIds[0])
+      if (firstMatch) {
+        setSelectedNode(firstMatch)
+        setQueryOid(firstMatch.oid)
+      }
+    }
+  }, [mibTree, setSelectedNode, setQueryOid])
 
   // Scroll to current match when cycling through results
   useEffect(() => {
@@ -171,12 +167,14 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
     e.preventDefault()
   }, [detailHeight])
 
-  // Handle Enter key in search input to cycle through matches
+  // Handle Enter key: trigger search on first press, cycle matches on subsequent presses
   const handleSearchKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (searchMatchIds.length === 0) return
     if (e.key === 'Enter') {
       e.preventDefault()
-      if (e.shiftKey) {
+      if (searchMatchIds.length === 0) {
+        // No matches yet — perform initial search
+        performSearch(searchText)
+      } else if (e.shiftKey) {
         // Previous match
         setCurrentMatchIndex(prev => (prev - 1 + searchMatchIds.length) % searchMatchIds.length)
       } else {
@@ -184,7 +182,7 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
         setCurrentMatchIndex(prev => (prev + 1) % searchMatchIds.length)
       }
     }
-  }, [searchMatchIds.length])
+  }, [searchText, searchMatchIds.length, performSearch])
 
   // Always convert the full mibTree to DataNode format (no filtering)
   const searchMatchSet = useMemo(() => new Set(searchMatchIds), [searchMatchIds])

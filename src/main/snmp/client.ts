@@ -381,7 +381,10 @@ export function snmpWalk(config: SnmpConfig, rootOid: string): Promise<SnmpResul
       }
 
       for (const vb of varbinds as Array<{ oid: string; type: number; value: unknown }>) {
-        if (snmp.isVarbindError(vb)) {
+        // endOfMibView (type 130) means the agent finished — stop the walk.
+        // noSuchInstance (129) / noSuchObject (128) are non-fatal: include
+        // them so the UI can show the error indicator, and keep walking.
+        if (snmp.isVarbindError(vb) && (vb as { type: number }).type === 130) {
           session.close()
           resolve({
             success: true,
@@ -458,42 +461,29 @@ export function snmpBulkWalk(
 
       const flat = flattenBulkVarbinds(varbinds || [], 0)
       let lastOid = ''
+      let hitEndOfMib = false
 
       for (const vb of flat) {
-        if (snmp.isVarbindError(vb)) {
-          session.close()
-          resolve({
-            success: true,
-            varbinds: results,
-            responseTime: Date.now() - startTime,
-            timestamp: Date.now()
-          })
-          return
+        // endOfMibView (type 130) means the agent finished — stop the walk
+        // after processing this batch. noSuchInstance/noSuchObject are
+        // non-fatal: include and keep walking.
+        if (snmp.isVarbindError(vb) && (vb as { type: number }).type === 130) {
+          hitEndOfMib = true
+          break
         }
 
         // Stop as soon as we walk past the requested subtree.
-        // The boundary varbind itself does NOT belong to the result set,
-        // so we must check BEFORE pushing — otherwise empty tables would
-        // leak the next sibling's first instance into the results.
+        // The boundary varbind itself does NOT belong to the result set.
         if (!oidInSubtree(vb.oid, rootOid)) {
-          session.close()
-          resolve({
-            success: true,
-            varbinds: results,
-            responseTime: Date.now() - startTime,
-            timestamp: Date.now()
-          })
-          return
+          hitEndOfMib = true
+          break
         }
 
         results.push(formatVarbindValue(vb))
         lastOid = vb.oid
       }
 
-      if (flat.length > 0 && lastOid) {
-        // Strip leading dot before recursing — see snmpWalk for rationale.
-        session.getBulk([stripLeadingDot(lastOid)], 0, maxRepetitions, callback)
-      } else {
+      if (hitEndOfMib || flat.length === 0 || !lastOid) {
         session.close()
         resolve({
           success: true,
@@ -501,7 +491,11 @@ export function snmpBulkWalk(
           responseTime: Date.now() - startTime,
           timestamp: Date.now()
         })
+        return
       }
+
+      // Strip leading dot before recursing — see snmpWalk for rationale.
+      session.getBulk([stripLeadingDot(lastOid)], 0, maxRepetitions, callback)
     }
 
     session.getBulk([rootOid], 0, maxRepetitions, callback)
