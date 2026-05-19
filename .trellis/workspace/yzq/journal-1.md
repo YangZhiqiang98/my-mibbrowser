@@ -240,3 +240,37 @@ Fixed 4 regression bugs: (1) MIB tree corruption from counter-based node ID coll
 ### Next Steps
 
 - None - task complete
+
+
+## Session 7: Fix SNMP walk subtree + smart multi-column GETBULK on table
+
+**Date**: 2026-05-19
+**Task**: Fix SNMP walk subtree + smart multi-column GETBULK on table
+**Branch**: `master`
+
+### Summary
+
+Fixed WALK/BULK_WALK on tables losing all-but-first varbind: oidInSubtree now uses .-segment boundary, subtree check runs before push, lastOid stripped of net-snmp leading dot on recursive getNext/getBulk. Empty tables now return [] instead of leaking the next sibling subtree. GETBULK on table/entry nodes fans out to every column OID under entry as repeaters via resolveBulkOids helper in MibTreePanel. Captured four executable SNMP constraints into new specs: backend/snmp-guidelines.md (segment-boundary subtree check, net-snmp leading-dot normalization, walk loop ordering) and frontend/mib-tree-snmp-ops.md (multi-column GETBULK on table/entry). Bootstrapped Trellis project (config/workflow/scripts/specs) and AGENTS.md; gitignored .claude/ and .cursor/ local agent tooling.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `2a64378` | (see git log) |
+| `7960e81` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

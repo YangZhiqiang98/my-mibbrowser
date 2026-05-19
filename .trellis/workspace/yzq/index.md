@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 6
-- **Last Active**: 2026-05-18
+- **Total Sessions**: 7
+- **Last Active**: 2026-05-19
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~242 | Active |
+| `journal-1.md` | ~276 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 7 | 2026-05-19 | Fix SNMP walk subtree + smart multi-column GETBULK on table | `2a64378`, `7960e81` | `master` |
 | 6 | 2026-05-18 | fix: stable node IDs, GETBULK flatten, sourceDir-aware cache dedup | `e45deb9` | `master` |
 | 5 | 2026-05-15 | MIB tree OID dedup, orphan filter, configurable cache directory | `2fc8cb8` | `master` |
 | 4 | 2026-05-15 | MIB parser fixes: IMPORTS pollution, OID construction, duplicate nodes | `403e3f7`, `59c9aa8`, `358cb59` | `master` |
