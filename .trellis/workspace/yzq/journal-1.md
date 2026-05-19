@@ -274,3 +274,36 @@ Fixed WALK/BULK_WALK on tables losing all-but-first varbind: oidInSubtree now us
 ### Next Steps
 
 - None - task complete
+
+
+## Session 8: Dynamic result table + smart column ops + profile apply + UX polish
+
+**Date**: 2026-05-19
+**Task**: Dynamic result table + smart column ops + profile apply + UX polish
+**Branch**: `master`
+
+### Summary
+
+Five UX/SNMP fixes in one task. (1) Column-node GETBULK now iterates via bulkWalk (returns all instances of that column); table/entry keep multi-OID single-PDU; scalar/leaf single-OID. (2) Empty SNMP results render inline antd Empty + status bar hint, no popups. (3) Toolbar profile dropdown apply moved from inner <span onClick> (unreachable through AntD v5/v6 menu item click path) to item-level onClick. (4) QueryPanel collapses by default; MIB tree right-click adds SET with value/type modal, gating !hasOid only (device responds with authorization). (5) ResultsPanel rewritten from static ResultRow[] to ResultSession with dynamic columns derived by longest-prefix MIB segment-boundary matching; per-op overwrite + loading; hand-rolled column resize + reorder (zero new deps); error varbinds remain in table as red tags. Captured four executable constraints: AntD Dropdown menu item click routing (component-guidelines.md), and single SNMP write path / device-level SET authority / longest-prefix segment-boundary column resolution (mib-tree-snmp-ops.md, cross-ref backend/snmp-guidelines.md Constraint 1).
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `2a3b94f` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
