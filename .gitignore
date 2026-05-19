@@ -6,3 +6,7 @@ dist/
 Thumbs.db
 .env
 .env.local
+
+# IDE / agent tooling installed locally
+.claude/
+.cursor/
