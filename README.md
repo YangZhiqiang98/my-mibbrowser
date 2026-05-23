@@ -97,20 +97,6 @@ npx electron-builder
 
 构建配置详见 [`electron-builder.json5`](./electron-builder.json5)。
 
-## 🧪 开发规范
-
-本项目使用 [Trellis](https://trellis.dev) 管理。在 `src/` 下任一层写代码前，请先阅读对应规范：
-
-- 主进程规范：[`.trellis/spec/backend/`](./.trellis/spec/backend/)
-- 渲染进程规范：[`.trellis/spec/frontend/`](./.trellis/spec/frontend/)
-- 跨层设计指南：[`.trellis/spec/guides/`](./.trellis/spec/guides/)
-
-提交前请确保：
-
-- [ ] `npm run typecheck` 通过
-- [ ] `npm run lint` 无 error
-- [ ] 已根据对应层规范实现
-
 ## 🐛 常见问题
 
 ### `Error: Electron uninstall`
