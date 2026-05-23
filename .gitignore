@@ -7,6 +7,6 @@ Thumbs.db
 .env
 .env.local
 
-# IDE / agent tooling installed locally
-.claude/
-.cursor/
+# IDE / agent tooling: only ignore local-only config, keep shared skills/agents/commands in repo
+.claude/settings.local.json
+.cursor/settings.local.json
