@@ -420,3 +420,37 @@ Search改为Enter触发; snmpWalk/BulkWalk区分endOfMibView与noSuchInstance; G
 ### 待后续
 - abort 任务（独立开 `task.py create`）
 - 本次产生的 dead `case 'GETNEXT'` 后续若清理，连带删 `executeSnmpOperation` 类型联合中的 GETNEXT —— 跨改动较广，单独 refactor PR
+
+
+## Session 10: GET 多节点对话框 + 移除 GETNEXT 菜单（含 SET 多节点的最终化）
+
+**Date**: 2026-05-23
+**Task**: GET 多节点对话框 + 移除 GETNEXT 菜单（含 SET 多节点的最终化）
+**Branch**: `main`
+
+### Summary
+
+两个连续任务一气呵成：(1) SET 多节点对话框落地（替换旧单节点 Modal、drop zone 接 pendingDragNode、行级 walk + 获取当前值、atomic 多 varbind SET）；(2) GET 操作演进：清理两处 GETNEXT UI 入口、把右键 GET 改走 GetMultiNodeDialog（仿 SET 的五件套结构、行级 instance 选择 + walk 按钮、atomic 多 OID GET、Modal 保持打开），中途撤回了 PR3 的'转为 SET'联动（最终决策 GET 只负责 GET）。pendingDragNode 由 SET 专用提升为跨组件拖拽桥，写进 state-management.md；右键 GET/SET 的'走对话框 vs 直接 fire'分流写进 mib-tree-snmp-ops.md 的新约束。底层 SNMP IPC 全程未动。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `adf2629` | (see git log) |
+| `3161f30` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
