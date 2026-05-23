@@ -2,6 +2,7 @@ import { app, BrowserWindow, shell } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { registerIpcHandlers, loadMibCache } from './ipc/handlers'
+import { registerToolWindowHandlers } from './toolWindows'
 
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
@@ -16,6 +17,8 @@ function createWindow(): void {
       sandbox: false
     }
   })
+
+  registerToolWindowHandlers(mainWindow)
 
   mainWindow.on('ready-to-show', () => {
     mainWindow.show()

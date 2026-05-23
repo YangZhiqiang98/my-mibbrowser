@@ -1,6 +1,14 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { MibParseResult, MibNode } from '../main/mib/types'
 import type { SnmpConfig, SnmpResult, SnmpSetValue } from '../main/snmp/types'
+import type {
+  SnmpToolWindowContext,
+  SnmpToolWindowOpenRequest,
+  SnmpToolWindowResultUpdate,
+  SnmpToolWindowStatusUpdate,
+  SnmpToolWindowToast,
+  ToolWindowMibNode
+} from '../shared/toolWindowTypes'
 
 /**
  * API exposed to the renderer process via contextBridge
@@ -51,6 +59,44 @@ const api = {
       ipcRenderer.invoke('export:csv', data),
     xml: (data: Array<Record<string, unknown>>): Promise<boolean> =>
       ipcRenderer.invoke('export:xml', data)
+  },
+
+  // GET / SET tool windows
+  snmpTool: {
+    open: (request: SnmpToolWindowOpenRequest): Promise<void> =>
+      ipcRenderer.invoke('snmp-tool:open', request),
+    getContext: (): Promise<SnmpToolWindowContext | null> =>
+      ipcRenderer.invoke('snmp-tool:get-context'),
+    updateMainResult: (update: SnmpToolWindowResultUpdate): Promise<void> =>
+      ipcRenderer.invoke('snmp-tool:update-main-result', update),
+    updateMainStatus: (update: SnmpToolWindowStatusUpdate): Promise<void> =>
+      ipcRenderer.invoke('snmp-tool:update-main-status', update),
+    showMainToast: (toast: SnmpToolWindowToast): Promise<void> =>
+      ipcRenderer.invoke('snmp-tool:show-main-toast', toast),
+    setDragNode: (node: ToolWindowMibNode | null): Promise<void> =>
+      ipcRenderer.invoke('snmp-tool:set-drag-node', node),
+    consumeDragNode: (): Promise<ToolWindowMibNode | null> =>
+      ipcRenderer.invoke('snmp-tool:consume-drag-node'),
+    onContextUpdated: (callback: (context: SnmpToolWindowContext) => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, context: SnmpToolWindowContext) => callback(context)
+      ipcRenderer.on('snmp-tool:context-updated', listener)
+      return () => ipcRenderer.removeListener('snmp-tool:context-updated', listener)
+    },
+    onMainResultUpdate: (callback: (update: SnmpToolWindowResultUpdate) => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, update: SnmpToolWindowResultUpdate) => callback(update)
+      ipcRenderer.on('snmp-tool:main-result-update', listener)
+      return () => ipcRenderer.removeListener('snmp-tool:main-result-update', listener)
+    },
+    onMainStatusUpdate: (callback: (update: SnmpToolWindowStatusUpdate) => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, update: SnmpToolWindowStatusUpdate) => callback(update)
+      ipcRenderer.on('snmp-tool:main-status-update', listener)
+      return () => ipcRenderer.removeListener('snmp-tool:main-status-update', listener)
+    },
+    onMainToast: (callback: (toast: SnmpToolWindowToast) => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, toast: SnmpToolWindowToast) => callback(toast)
+      ipcRenderer.on('snmp-tool:main-toast', listener)
+      return () => ipcRenderer.removeListener('snmp-tool:main-toast', listener)
+    }
   }
 }
 

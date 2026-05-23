@@ -8,6 +8,7 @@ import { ResultsPanel } from './components/ResultsPanel'
 import { StatusBar } from './components/StatusBar'
 import { useAppStore } from './stores/appStore'
 import { buildTreeFromNodes } from './utils/mibTreeUtils'
+import type { SnmpToolWindowToast } from '../../shared/toolWindowTypes'
 
 export default function App(): React.ReactElement {
   const setProfiles = useAppStore((s) => s.setProfiles)
@@ -74,6 +75,7 @@ export default function App(): React.ReactElement {
   return (
     <ConfigProvider locale={zhCN} theme={{ token: { colorPrimary: '#1890ff' } }}>
       <AntApp>
+        <MainWindowToolBridge />
         <div className="app-container">
           <Toolbar />
           <div className="main-content">
@@ -92,5 +94,57 @@ export default function App(): React.ReactElement {
       </AntApp>
     </ConfigProvider>
   )
+}
+
+function MainWindowToolBridge(): null {
+  const { message: appMessage } = AntApp.useApp()
+  const setResult = useAppStore((s) => s.setResult)
+  const setConnectionStatus = useAppStore((s) => s.setConnectionStatus)
+  const setStatusMessage = useAppStore((s) => s.setStatusMessage)
+  const setIsQuerying = useAppStore((s) => s.setIsQuerying)
+
+  useEffect(() => {
+    const cleanupResult = window.api.snmpTool.onMainResultUpdate((update) => {
+      setResult(update.session)
+      if (update.connectionStatus) setConnectionStatus(update.connectionStatus)
+      if (update.statusMessage) setStatusMessage(update.statusMessage)
+      if (update.isQuerying !== undefined) setIsQuerying(update.isQuerying)
+    })
+
+    const cleanupStatus = window.api.snmpTool.onMainStatusUpdate((update) => {
+      if (update.connectionStatus) setConnectionStatus(update.connectionStatus)
+      if (update.statusMessage) setStatusMessage(update.statusMessage)
+      if (update.isQuerying !== undefined) setIsQuerying(update.isQuerying)
+    })
+
+    const cleanupToast = window.api.snmpTool.onMainToast((toast) => {
+      showToolToast(appMessage, toast)
+    })
+
+    return () => {
+      cleanupResult()
+      cleanupStatus()
+      cleanupToast()
+    }
+  }, [appMessage, setConnectionStatus, setIsQuerying, setResult, setStatusMessage])
+
+  return null
+}
+
+function showToolToast(messageApi: ReturnType<typeof AntApp.useApp>['message'], toast: SnmpToolWindowToast): void {
+  switch (toast.kind) {
+    case 'success':
+      messageApi.success(toast.message)
+      break
+    case 'error':
+      messageApi.error(toast.message)
+      break
+    case 'warning':
+      messageApi.warning(toast.message)
+      break
+    case 'info':
+      messageApi.info(toast.message)
+      break
+  }
 }
 

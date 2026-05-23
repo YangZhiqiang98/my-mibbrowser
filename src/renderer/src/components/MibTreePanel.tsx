@@ -26,9 +26,6 @@ import type { MibTreeNodeData } from '../types'
 import type { SnmpResult } from '../../../main/snmp/types'
 import { buildTreeFromNodes } from '../utils/mibTreeUtils'
 import { buildResultSession } from '../utils/resultColumns'
-import { SetMultiNodeDialog } from './SetMultiNodeDialog'
-import type { SetSeed } from './SetMultiNodeDialog/types'
-import { GetMultiNodeDialog } from './GetMultiNodeDialog'
 
 const ACCESS_COLOR_MAP: Record<string, string> = {
   'read-only': 'blue',
@@ -59,7 +56,6 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
   const setResult = useAppStore((s) => s.setResult)
   const setConnectionStatus = useAppStore((s) => s.setConnectionStatus)
   const setIsQuerying = useAppStore((s) => s.setIsQuerying)
-  const setPendingDragNode = useAppStore((s) => s.setPendingDragNode)
 
   const [searchText, setSearchText] = useState('')
   const [expandedKeys, setExpandedKeys] = useState<string[]>([])
@@ -71,6 +67,7 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
   const isDetailDragging = useRef(false)
   const detailStartY = useRef(0)
   const detailStartHeight = useRef(0)
+  const dragSequence = useRef(0)
 
   // Perform MIB tree search: find matching nodes, expand ancestors, and select first match
   const performSearch = useCallback((query: string) => {
@@ -281,17 +278,6 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
 
   const [contextMenuNode, setContextMenuNode] = useState<MibTreeNodeData | null>(null)
 
-  // Multi-node SET dialog. `setDialogSeed` carries the first row's seed
-  // (node + optional instance/targetValue overrides). Right-click SET passes
-  // just the node; the GET dialog's "转为 SET" handoff passes the full seed.
-  const [setDialogSeed, setSetDialogSeed] = useState<SetSeed | null>(null)
-
-  // Multi-node GET dialog. Same seed pattern as SET: non-null = open.
-  // Closing clears the seed so the next right-click reopens fresh. Stays
-  // as `MibTreeNodeData` (not a SetSeed-style object) because GET has no
-  // instance/targetValue overrides to carry across.
-  const [getDialogSeed, setGetDialogSeed] = useState<MibTreeNodeData | null>(null)
-
   const collectSubtreeKeys = useCallback((node: MibTreeNodeData): string[] => {
     const keys = [node.id]
     for (const child of node.children) {
@@ -404,8 +390,15 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
       appMessage.warning('No OID available for this node')
       return
     }
-    setSetDialogSeed({ node })
-  }, [appMessage])
+    window.api.snmpTool.open({
+      kind: 'set',
+      seed: { node },
+      snmpConfig,
+      mibTree
+    }).catch((error) => {
+      appMessage.error(`打开 SET 窗口失败：${error instanceof Error ? error.message : String(error)}`)
+    })
+  }, [appMessage, mibTree, snmpConfig])
 
   /**
    * Open the multi-node GET dialog. Right-click GET goes through this
@@ -418,8 +411,15 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
       appMessage.warning('No OID available for this node')
       return
     }
-    setGetDialogSeed(node)
-  }, [appMessage])
+    window.api.snmpTool.open({
+      kind: 'get',
+      seed: node,
+      snmpConfig,
+      mibTree
+    }).catch((error) => {
+      appMessage.error(`打开 GET 窗口失败：${error instanceof Error ? error.message : String(error)}`)
+    })
+  }, [appMessage, mibTree, snmpConfig])
 
   const contextMenuItems: MenuProps['items'] = useMemo(() => {
     if (!contextMenuNode) return []
@@ -523,18 +523,27 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
     ]
   }, [contextMenuNode, collectSubtreeKeys, setQueryOid, setSelectedNode, executeSnmpOperation, openGetDialog, openSetDialog])
 
-  // Drag a tree node into a SET dialog drop zone. antd Tree's draggable
-  // callback does not expose native DataTransfer (it's wrapped by rc-tree),
-  // so we route the node through the Zustand store instead. SetMultiNodeDialog
-  // reads `pendingDragNode` in its onDrop handler.
+  // Drag a tree node into a GET / SET tool window drop zone. AntD Tree's
+  // wrapped drag event is not reliable enough as the sole data channel across
+  // BrowserWindows, so the selected node is also published through main-process
+  // IPC and consumed by the receiving tool window on drop.
   const handleTreeDragStart: NonNullable<TreeProps['onDragStart']> = useCallback((info) => {
     const node = findNodeById(mibTree, info.node.key as string)
-    if (node) setPendingDragNode(node)
-  }, [mibTree, setPendingDragNode])
+    if (node) {
+      dragSequence.current += 1
+      info.event.dataTransfer?.setData('text/plain', node.id)
+      window.api.snmpTool.setDragNode(node).catch(() => {})
+    }
+  }, [mibTree])
 
   const handleTreeDragEnd: NonNullable<TreeProps['onDragEnd']> = useCallback(() => {
-    setPendingDragNode(null)
-  }, [setPendingDragNode])
+    const finishedSequence = dragSequence.current
+    window.setTimeout(() => {
+      if (dragSequence.current === finishedSequence) {
+        window.api.snmpTool.setDragNode(null).catch(() => {})
+      }
+    }, 500)
+  }, [])
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -747,21 +756,6 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
         </>
       )}
 
-      {/* Multi-node SET dialog. Replaces the legacy single-OID Modal.
-          Closing clears the seed so the next right-click reopens fresh. */}
-      <SetMultiNodeDialog
-        initialSeed={setDialogSeed}
-        onClose={() => setSetDialogSeed(null)}
-      />
-
-      {/* Multi-node GET dialog. Lets the user pick an instance suffix
-          (manually or via WALK) and optionally drag in more nodes before
-          firing the GET. Stays open after dispatch so the user can adjust
-          and re-fire. */}
-      <GetMultiNodeDialog
-        initialNode={getDialogSeed}
-        onClose={() => setGetDialogSeed(null)}
-      />
     </div>
   )
 }

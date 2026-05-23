@@ -1,5 +1,13 @@
 import type { MibParseResult, MibNode } from '../../../main/mib/types'
 import type { SnmpConfig, SnmpResult, SnmpSetValue, SnmpOperation } from '../../../main/snmp/types'
+import type {
+  SnmpToolWindowContext,
+  SnmpToolWindowOpenRequest,
+  SnmpToolWindowResultUpdate,
+  SnmpToolWindowStatusUpdate,
+  SnmpToolWindowToast,
+  ToolWindowMibNode
+} from '../../../shared/toolWindowTypes'
 
 declare global {
   interface Window {
@@ -30,6 +38,19 @@ declare global {
       export: {
         csv: (data: Array<Record<string, unknown>>) => Promise<boolean>
         xml: (data: Array<Record<string, unknown>>) => Promise<boolean>
+      }
+      snmpTool: {
+        open: (request: SnmpToolWindowOpenRequest) => Promise<void>
+        getContext: () => Promise<SnmpToolWindowContext | null>
+        updateMainResult: (update: SnmpToolWindowResultUpdate) => Promise<void>
+        updateMainStatus: (update: SnmpToolWindowStatusUpdate) => Promise<void>
+        showMainToast: (toast: SnmpToolWindowToast) => Promise<void>
+        setDragNode: (node: ToolWindowMibNode | null) => Promise<void>
+        consumeDragNode: () => Promise<ToolWindowMibNode | null>
+        onContextUpdated: (callback: (context: SnmpToolWindowContext) => void) => () => void
+        onMainResultUpdate: (callback: (update: SnmpToolWindowResultUpdate) => void) => () => void
+        onMainStatusUpdate: (callback: (update: SnmpToolWindowStatusUpdate) => void) => () => void
+        onMainToast: (callback: (toast: SnmpToolWindowToast) => void) => () => void
       }
     }
   }
