@@ -27,7 +27,7 @@ src/renderer/
 │   ├── stores/
 │   │   └── appStore.ts          # Zustand global store
 │   ├── types/
-│   │   └── index.ts             # Renderer-specific types (ResultRow, ProfileItem, etc.)
+│   │   └── index.ts             # Renderer-specific types (ResultSession, ProfileItem, etc.)
 │   ├── utils/
 │   │   └── mibTreeUtils.ts      # Tree data transformation utilities
 │   └── styles.css               # Global styles

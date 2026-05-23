@@ -15,7 +15,7 @@ TypeScript 6 in strict mode. Types are co-located with domain modules and shared
 | Location | Content |
 |----------|---------|
 | `src/main/*/types.ts` | Domain types shared across processes (SnmpConfig, SnmpResult, MibNode) |
-| `src/renderer/src/types/index.ts` | Renderer-specific types (ResultRow, ProfileItem, MibTreeNodeData) |
+| `src/renderer/src/types/index.ts` | Renderer-specific types (ResultSession, ProfileItem, MibTreeNodeData) |
 | Component files | Props interfaces defined inline above the component |
 
 ---
