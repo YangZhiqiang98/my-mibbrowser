@@ -602,3 +602,37 @@ Optimized the device connection toolbar into a settings dialog, added SNMP bulk 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 14: Cleanup Deprecated GET SET Code
+
+**Date**: 2026-05-24
+**Task**: Cleanup Deprecated GET SET Code
+**Branch**: `main`
+
+### Summary
+
+Removed unreachable legacy GET/SET AntD modal code, cleaned obsolete store/types/CSS, updated frontend specs for the Electron tool-window workflow, and verified typecheck, lint, and tests.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `39e8bfb` | (see git log) |
+| `d182edc` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
