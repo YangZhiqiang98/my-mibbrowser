@@ -454,3 +454,51 @@ Search改为Enter触发; snmpWalk/BulkWalk区分endOfMibView与noSuchInstance; G
 ### Next Steps
 
 - None - task complete
+
+
+## 2026-05-23 任务：05-23-snmp-walk-bulkwalk-abort
+
+### Brainstorm 关键决策（6 个）
+- D1 abort 覆盖所有 6 个 SNMP 操作，不只 WALK/BULKWALK（短操作可能 abort 时已返回 = no-op，但统一一套机制 UX 更一致）
+- D2 abort UI 入口仅在 status bar，loading 时高亮可点 / 闲时灰；不联动 Send / Modal cancel 按钮
+- D3 部分结果保留（WALK / BULK_WALK 已收集的 varbinds），status bar 文本加 `aborted at N rows`
+- D4 不弹 antd message 反馈，status bar 文字单一通道
+- D5 abort 不动 connectionStatus，仅复位 isQuerying
+- D6 close-only 取消机制 + aborted/settled flag 协作 + 单 currentSession 全局 ref（前 UI 单操作互斥）
+
+### 实施切分（3 PR 一气呵成）
+- **PR1 主进程 + IPC + preload + types**：
+  - `src/main/snmp/client.ts`：顶部加 `currentSession: SnmpSession | null` + `abortRequested: boolean` + `cancelCurrentSnmpOperation()` 导出函数；6 个 snmpXxx 函数体改为 `finish(session, result)` 统一退出助手，每条退出路径（success / error / abort / sync-throw）走同一个 finish 调用；walk-shaped 函数在递归 getNext/getBulk 之前加 `if (abortRequested) return` 防止已 close socket 再发包；try/catch 包所有 `session.close()` 兼容 `ERR_SOCKET_DGRAM_NOT_RUNNING` 双 close
+  - `src/main/snmp/types.ts`：`SnmpResult` 加可选 `aborted?: boolean`
+  - `src/main/ipc/handlers.ts`：注册 `snmp:cancel` 通道，一行 passthrough 到 `cancelCurrentSnmpOperation()`
+  - `src/preload/index.ts`：暴露 `window.api.snmp.cancel(): Promise<boolean>`
+  - `src/renderer/src/types/index.ts`：mirror `cancel` 到 Window.api 类型
+- **PR2 StatusBar abort 按钮**：
+  - `src/renderer/src/components/StatusBar.tsx`：加 `<Button danger size="small" icon={<StopOutlined />}>取消</Button>`，Tooltip 包裹（disabled 时仍可悬停显示提示）；`disabled={!isQuerying}` 是唯一启用条件（无新增 store state）；onClick 直接 fire-and-forget `void window.api.snmp.cancel()`
+- **PR3 前端 4 处调用方处理 result.aborted**：
+  - `QueryPanel.handleSend`：`if (result.success) { if (result.aborted) { ... } else { ... } }` —— aborted 分支走 buildResultSession + setResult 保留部分行，setStatusMessage 用 abort 文案，不动 connectionStatus / 不弹 message
+  - `MibTreePanel.executeSnmpOperation`：同样的 aborted 分支结构
+  - `SetMultiNodeDialog.handleSubmit`：abort 路径**不**调 onClose()，对话框保持打开让用户看清取消了什么
+  - `GetMultiNodeDialog.handleSubmit`：同上
+
+### 关键设计要点
+- **finish 助手的退出顺序**：`if (settled) return` → `settled = true` → `currentSession = null`（先于 close）→ `try { session.close() } catch` → `resolve(result)`。null 必须先于 close，防止 racing cancel 看到 stale session ref
+- **abortRequested 是模块级 flag，settled 是函数级 flag**：abortRequested 让 callback 把 close-induced error 当 abort 不当 error；settled 防 Promise 双 resolve（close 后 pending callback 仍会触发一次）
+- **walk-loop 双重 abort 检查**：(1) callback 入口检查，(2) 递归 getNext/getBulk 前检查。少了第二个就会向已 close 的 socket 发包，部分平台观察到 fd 泄漏
+- **session.close() 在 cancel 和 finish 中可能被调用两次**：cancel 触发首次 close → callback 在 next tick fire → finish 再 close 一次。必须 try/catch 双 close
+- **单 currentSession ref 依赖 UI 单操作互斥**：appStore.isQuerying 是 boolean 锁；若未来要并发 SNMP ops 必须先把全局 ref 换成 token-keyed map
+
+### Spec 更新
+- `backend/snmp-guidelines.md` 加 **Constraint 4: Cancellable SNMP Operations Use Single-Mutex Session Tracking**：完整 finish 助手模板 + 4 条 Why（net-snmp 无 per-request cancel API、close 不幂等、settled 防双 resolve、ref 清理顺序、walk-loop 双重检查）+ 应用规则
+- `frontend/mib-tree-snmp-ops.md` 在 "Single Write Path" 约束的 How to Apply 加 abort 处理子条款：4 个 trigger site 必须实现的 aborted 分支语义（保留部分行、不动 connectionStatus、不弹 message、Dialog 保持打开）
+
+### 验证
+- typecheck (`tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json`) 全绿
+- lint (`eslint src/`) 0 errors / 0 warnings
+- build (`electron-vite build`) 主进程 56KB / preload 1.79KB / renderer 2354KB 全部成功（4.94s）
+- currentSession 清理路径 trace：6 个函数 × {success, error, abort, sync-throw, settled-guard} = 全覆盖，无 ref 泄漏
+- 手测留到连真实 SNMP agent 时按 PRD AC 清单逐项过（慢 WALK 中途 abort、双击 abort、abort 后立刻发新操作、操作已完成再点 abort 等）
+
+### 待后续
+- 若未来要支持并发 SNMP ops，必须先重做 currentSession → token map 这层（spec Constraint 4 有说明）
+- 当前 abort 没有进度条 / 实时行数显示（PRD Out of Scope）
