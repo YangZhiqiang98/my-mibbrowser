@@ -502,3 +502,36 @@ Search改为Enter触发; snmpWalk/BulkWalk区分endOfMibView与noSuchInstance; G
 ### 待后续
 - 若未来要支持并发 SNMP ops，必须先重做 currentSession → token map 这层（spec Constraint 4 有说明）
 - 当前 abort 没有进度条 / 实时行数显示（PRD Out of Scope）
+
+
+## Session 11: Multi-node SET dialog interactions
+
+**Date**: 2026-05-24
+**Task**: Multi-node SET dialog interactions
+**Branch**: `main`
+
+### Summary
+
+Implemented multi-node SET dialog improvements: dnd-kit row sorting, reusable draggable non-modal GET/SET dialogs, Vitest coverage for SET row utilities/hooks, and updated frontend specs for testing and non-modal AntD dialog behavior.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `175f149` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
