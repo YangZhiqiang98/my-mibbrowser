@@ -162,19 +162,33 @@ export function GetMultiNodeDialog({ initialNode, onClose }: GetMultiNodeDialogP
     try {
       const result = await window.api.snmp.get(snmpConfig, oids)
       if (result.success) {
-        setConnectionStatus('connected')
-        // First OID is the "primary" — buildResultSession uses it for the
-        // session title only; all varbinds in the response are still rendered.
-        const session: ResultSession = buildResultSession('GET', oids[0], result, mibTree)
-        setResult(session)
-        const baseMsg = `GET: ${session.rows.length} result(s), ${result.responseTime}ms`
-        setStatusMessage(
-          session.rows.length === 0 ? `${baseMsg} — 本次操作结果为空` : baseMsg
-        )
-        appMessage.success(`GET succeeded (${oids.length} OID${oids.length > 1 ? 's' : ''})`)
-        // Intentionally NOT calling onClose() — keep the dialog open so the
-        // user can tweak instance / add or remove rows and fire again
-        // without re-opening (PRD D7 / R15).
+        if (result.aborted) {
+          // User-cancelled path. GET is single-shot but close() may still
+          // race the callback; if so, keep whatever varbinds came back and
+          // surface "aborted at N rows" on the status bar. No
+          // connectionStatus mutation (D5), no message toast (D4), and no
+          // onClose() — the dialog stays open the same way the success path
+          // does so the user can retry.
+          const session: ResultSession = buildResultSession('GET', oids[0], result, mibTree)
+          setResult(session)
+          setStatusMessage(
+            `GET: aborted at ${session.rows.length} row(s), ${result.responseTime}ms`
+          )
+        } else {
+          setConnectionStatus('connected')
+          // First OID is the "primary" — buildResultSession uses it for the
+          // session title only; all varbinds in the response are still rendered.
+          const session: ResultSession = buildResultSession('GET', oids[0], result, mibTree)
+          setResult(session)
+          const baseMsg = `GET: ${session.rows.length} result(s), ${result.responseTime}ms`
+          setStatusMessage(
+            session.rows.length === 0 ? `${baseMsg} — 本次操作结果为空` : baseMsg
+          )
+          appMessage.success(`GET succeeded (${oids.length} OID${oids.length > 1 ? 's' : ''})`)
+          // Intentionally NOT calling onClose() — keep the dialog open so the
+          // user can tweak instance / add or remove rows and fire again
+          // without re-opening (PRD D7 / R15).
+        }
       } else {
         setConnectionStatus('error')
         appMessage.error(`SNMP error: ${result.error}`)

@@ -114,9 +114,100 @@ SNMP walks work by repeatedly asking "what comes after the last OID?" until the 
 
 ---
 
+## Constraint 4: Cancellable SNMP Operations Use Single-Mutex Session Tracking
+
+Every SNMP operation (`snmpGet`, `snmpGetNext`, `snmpGetBulk`, `snmpSet`, `snmpWalk`, `snmpBulkWalk`) must register its session in the module-level `currentSession` ref and resolve its Promise exclusively through a local `finish(session, result)` helper. External cancellation goes through `cancelCurrentSnmpOperation()` → `session.close()`, which makes any pending net-snmp callback fire with `Error("Socket forcibly closed")` on the next tick. The `abortRequested` flag distinguishes "user cancelled" from a real socket error and lets the operation resolve as `{ success: true, aborted: true, varbinds: collectedSoFar }` instead of `success: false`.
+
+### Required Pattern
+
+```typescript
+// module-level singletons — UI is single-operation-at-a-time (appStore.isQuerying)
+let currentSession: SnmpSession | null = null
+let abortRequested = false
+
+export function cancelCurrentSnmpOperation(): boolean {
+  if (!currentSession) return false
+  abortRequested = true
+  try { currentSession.close() } catch { /* ERR_SOCKET_DGRAM_NOT_RUNNING — fine */ }
+  return true
+}
+
+export function snmpXxx(...): Promise<SnmpResult> {
+  return new Promise((resolve) => {
+    let settled = false
+
+    // Sole exit point. Order matters: null the ref BEFORE close() so a racing
+    // cancel cannot see a stale session.
+    const finish = (session: SnmpSession | null, result: SnmpResult) => {
+      if (settled) return
+      settled = true
+      if (currentSession === session) currentSession = null
+      if (session) {
+        try { session.close() } catch { /* may already be closed by abort */ }
+      }
+      resolve(result)
+    }
+
+    let session: SnmpSession
+    try {
+      session = createSession(config)
+    } catch (e) {
+      finish(null, { success: false, error: String(e), /* ... */ })
+      return
+    }
+
+    currentSession = session
+    abortRequested = false
+
+    try {
+      session.xxx(args, (error, varbinds) => {
+        // Abort takes priority — close() fires this with "Socket forcibly
+        // closed" which would otherwise look like a generic error.
+        if (abortRequested) {
+          finish(session, { success: true, aborted: true, varbinds: results, /* ... */ })
+          return
+        }
+        if (error) { finish(session, { success: false, /* ... */ }); return }
+        // ...success path...
+        finish(session, { success: true, varbinds: results, /* ... */ })
+      })
+    } catch (e) {
+      finish(session, { success: false, error: String(e), /* ... */ })
+    }
+  })
+}
+```
+
+For walk-shaped loops (`snmpWalk`, `snmpBulkWalk`), the abort check goes BOTH in the callback entry AND immediately before any recursive `session.getNext` / `session.getBulk` re-issue:
+
+```typescript
+if (abortRequested) return  // cancel landed between for-loop and recursion
+try { session.getNext([lastOid], callback) } catch (e) { finish(session, /* error */) }
+```
+
+### Why
+
+- **`net-snmp` v3 has no per-request cancel API** — `session.close()` is the only mechanism, and it tears down the underlying UDP socket. Pending callbacks fire on the next tick with a plain `Error("Socket forcibly closed")`. Without the `abortRequested` flag the cancellation is indistinguishable from a transport error and the operation resolves as `success: false`, which the renderer treats as a connection failure.
+- **`session.close()` is not idempotent.** A second call throws `ERR_SOCKET_DGRAM_NOT_RUNNING`. Without the try/catch in both `cancelCurrentSnmpOperation` and `finish`, a normal-completion finish racing with an abort throws and crashes the IPC handler. (`session.close()` happens twice in the abort path: once via `cancelCurrentSnmpOperation` to trigger the close-induced callback, once via `finish` because every exit path must close the session.)
+- **`settled` is a per-Promise guard.** Without it, a callback that fires after another exit (e.g., the close-induced callback arriving after `session.close()` in `finish`) calls `resolve` twice. The second `resolve` is a silent no-op in Promise semantics, but the side effects of `finish` (`currentSession = null`, `session.close()`) are not — running them twice nulls a freshly-set `currentSession` for the next operation and triggers the double-close throw.
+- **The `currentSession = null` order matters.** Setting it AFTER `session.close()` opens a window where a concurrent `cancelCurrentSnmpOperation()` would call `close()` on an already-closed session and observe ERR_SOCKET_DGRAM_NOT_RUNNING — caught, but adds noise. More importantly, the next operation could start, set `currentSession = newSession`, and then the still-running `finish` would null the new ref.
+- **The walk-loop pre-recursion abort check is load-bearing.** Without `if (abortRequested) return` before `session.getNext(...)`, a cancel that lands between the for-loop's last iteration and the recursive call would re-issue a getNext on a freshly-closed socket. `net-snmp` queues the request and then immediately delivers a close error via the callback; the callback resolves as aborted, which is correct, but the spurious `getNext` call has been observed to leak file descriptors on some platforms.
+
+### How to Apply
+
+- **New SNMP operation**: copy the full template above. The `finish` helper is per-function (closes over the local `settled`); the `currentSession` and `abortRequested` refs are module-level singletons shared by all operations.
+- **Never call `resolve(...)` directly.** Every exit path — success, error, abort, sync-throw — goes through `finish(session, result)`. Bypassing `finish` skips `settled` (double-resolve) and the `currentSession` cleanup (leak).
+- **Never call `session.close()` outside `finish` or `cancelCurrentSnmpOperation`.** Those are the only two authorized closers; both have the try/catch.
+- **The `currentSession` ref assumes UI single-mutex** (`appStore.isQuerying` boolean, see [frontend/state-management.md](../frontend/state-management.md)). If the renderer ever supports concurrent SNMP operations, this singleton must be replaced with a token-keyed map BEFORE the new entry points ship — otherwise a cancel intended for op A can hit op B's session.
+- **IPC layer**: register `snmp:cancel` in `handlers.ts` and expose `cancel(): Promise<boolean>` on the preload `window.api.snmp` bridge. The IPC handler is a one-line passthrough — no validation, no error wrapping (the underlying cancel cannot throw outside the try/catch).
+- **`SnmpResult.aborted` is optional and ADDITIVE** to `success: true`. Renderers handle the aborted path inside their `if (result.success)` branch via a nested `if (result.aborted)` check. See [frontend/mib-tree-snmp-ops.md](../frontend/mib-tree-snmp-ops.md) for the four trigger sites.
+
+---
+
 ## Cross-References
 
-- `src/main/snmp/client.ts` — canonical implementations of `oidInSubtree`, `stripLeadingDot`, `formatVarbindValue`, `snmpWalk`, `snmpBulkWalk`, `snmpGetBulk`, `flattenBulkVarbinds`.
+- `src/main/snmp/client.ts` — canonical implementations of `oidInSubtree`, `stripLeadingDot`, `formatVarbindValue`, `snmpWalk`, `snmpBulkWalk`, `snmpGetBulk`, `flattenBulkVarbinds`, `cancelCurrentSnmpOperation`, and the `finish(session, result)` pattern in all six SNMP entry points.
 - `src/main/mib/parser.ts` — `resolveOidToName` is the other historical site for the leading-dot normalization rule. Any new OID-keyed lookup in the MIB layer must strip first.
-- [error-handling.md](./error-handling.md) — Walk results follow the `SnmpResult` envelope; out-of-subtree termination is not an error.
-- [quality-guidelines.md](./quality-guidelines.md) — General code standards for the main process.
+- `src/main/ipc/handlers.ts` — `handleSnmpCancel` is the IPC passthrough; the actual cancel logic lives in `cancelCurrentSnmpOperation` in `client.ts`.
+- [error-handling.md](./error-handling.md) — Walk results follow the `SnmpResult` envelope; out-of-subtree termination is not an error. Abort follows the same envelope with the additional `aborted: true` flag.
+- [quality-guidelines.md](./quality-guidelines.md) — General code standards for the main process; includes the "no resource leaks" rule that motivates the strict `currentSession` clearing in `finish`.

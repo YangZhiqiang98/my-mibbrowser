@@ -7,6 +7,48 @@ import type { SnmpConfig, SnmpResult, SnmpVarbind, SnmpSetValue, SecurityLevel }
  */
 type RawVarbind = { oid: string; type: number; value: unknown }
 
+// ---------------------------------------------------------------------------
+// Single-mutex SNMP operation tracking.
+//
+// The UI is single-operation-at-a-time (appStore.isQuerying boolean), so one
+// global ref to the in-flight session suffices — there is no need for a
+// token-based per-operation cancel map. External cancel via
+// `cancelCurrentSnmpOperation()` triggers `session.close()`, which makes any
+// pending net-snmp callback fire with `Error("Socket forcibly closed")` on
+// the next tick (see research/net-snmp-cancel-api.md). The `abortRequested`
+// flag lets each operation distinguish "user cancelled us" from a real
+// socket error and resolve with `aborted: true` instead of `success: false`.
+// ---------------------------------------------------------------------------
+
+type SnmpSession = ReturnType<typeof snmp.createSession>
+
+let currentSession: SnmpSession | null = null
+let abortRequested = false
+
+/**
+ * Cancel the currently in-flight SNMP operation, if any.
+ *
+ * Idempotent and safe to call when nothing is running (returns `false`).
+ * Net-snmp v3 has no per-request cancel API — `close()` is the only
+ * mechanism, and it closes the underlying UDP socket. Each pending callback
+ * receives a plain `Error("Socket forcibly closed")` on the next tick; the
+ * snmp* functions detect this via the `abortRequested` flag and resolve with
+ * `aborted: true` instead of treating it as a failure.
+ *
+ * Calling `session.close()` twice throws `ERR_SOCKET_DGRAM_NOT_RUNNING`, so
+ * any throw from the underlying call is swallowed.
+ */
+export function cancelCurrentSnmpOperation(): boolean {
+  if (!currentSession) return false
+  abortRequested = true
+  try {
+    currentSession.close()
+  } catch {
+    // ERR_SOCKET_DGRAM_NOT_RUNNING — already closed; that's fine.
+  }
+  return true
+}
+
 /**
  * Normalize the varbinds returned by net-snmp's getBulk.
  *
@@ -166,35 +208,94 @@ function createSession(config: SnmpConfig): ReturnType<typeof snmp.createSession
 export function snmpGet(config: SnmpConfig, oids: string[]): Promise<SnmpResult> {
   return new Promise((resolve) => {
     const startTime = Date.now()
-    const session = createSession(config)
+    let settled = false
 
-    session.get(oids, (error: unknown, varbinds: unknown[]) => {
-      const responseTime = Date.now() - startTime
+    // Settle helper: clears the global currentSession ref, closes the session
+    // exactly once, and resolves the Promise. All resolve paths must go
+    // through this — never call `resolve(...) + session.close()` directly.
+    // Order matters: null the ref BEFORE close() so a concurrent cancel
+    // doesn't see a stale session.
+    const finish = (session: SnmpSession | null, result: SnmpResult): void => {
+      if (settled) return
+      settled = true
+      if (currentSession === session) currentSession = null
+      if (session) {
+        try {
+          session.close()
+        } catch {
+          // Already closed (typical when abort triggered the closure).
+        }
+      }
+      resolve(result)
+    }
 
-      if (error) {
-        session.close()
-        resolve({
-          success: false,
-          varbinds: [],
-          error: String(error),
+    let session: SnmpSession
+    try {
+      session = createSession(config)
+    } catch (e) {
+      finish(null, {
+        success: false,
+        varbinds: [],
+        error: String(e),
+        responseTime: Date.now() - startTime,
+        timestamp: Date.now()
+      })
+      return
+    }
+
+    // Register as the in-flight session BEFORE making any call so a racing
+    // cancel can find us. Reset abort flag for this operation.
+    currentSession = session
+    abortRequested = false
+
+    try {
+      session.get(oids, (error: unknown, varbinds: unknown[]) => {
+        const responseTime = Date.now() - startTime
+
+        // Abort takes priority: close() fires this callback with
+        // "Socket forcibly closed", which would otherwise look like an error.
+        if (abortRequested) {
+          finish(session, {
+            success: true,
+            varbinds: [],
+            aborted: true,
+            responseTime,
+            timestamp: Date.now()
+          })
+          return
+        }
+
+        if (error) {
+          finish(session, {
+            success: false,
+            varbinds: [],
+            error: String(error),
+            responseTime,
+            timestamp: Date.now()
+          })
+          return
+        }
+
+        const results = (varbinds || []).map((vb: unknown) =>
+          formatVarbindValue(vb as { oid: string; type: number; value: unknown })
+        )
+
+        finish(session, {
+          success: true,
+          varbinds: results,
           responseTime,
           timestamp: Date.now()
         })
-        return
-      }
-
-      const results = (varbinds || []).map((vb: unknown) =>
-        formatVarbindValue(vb as { oid: string; type: number; value: unknown })
-      )
-
-      session.close()
-      resolve({
-        success: true,
-        varbinds: results,
-        responseTime,
+      })
+    } catch (e) {
+      finish(session, {
+        success: false,
+        varbinds: [],
+        error: String(e),
+        responseTime: Date.now() - startTime,
         timestamp: Date.now()
       })
-    })
+    }
   })
 }
 
@@ -204,35 +305,85 @@ export function snmpGet(config: SnmpConfig, oids: string[]): Promise<SnmpResult>
 export function snmpGetNext(config: SnmpConfig, oids: string[]): Promise<SnmpResult> {
   return new Promise((resolve) => {
     const startTime = Date.now()
-    const session = createSession(config)
+    let settled = false
 
-    session.getNext(oids, (error: unknown, varbinds: unknown[]) => {
-      const responseTime = Date.now() - startTime
+    const finish = (session: SnmpSession | null, result: SnmpResult): void => {
+      if (settled) return
+      settled = true
+      if (currentSession === session) currentSession = null
+      if (session) {
+        try {
+          session.close()
+        } catch {
+          // Already closed.
+        }
+      }
+      resolve(result)
+    }
 
-      if (error) {
-        session.close()
-        resolve({
-          success: false,
-          varbinds: [],
-          error: String(error),
+    let session: SnmpSession
+    try {
+      session = createSession(config)
+    } catch (e) {
+      finish(null, {
+        success: false,
+        varbinds: [],
+        error: String(e),
+        responseTime: Date.now() - startTime,
+        timestamp: Date.now()
+      })
+      return
+    }
+
+    currentSession = session
+    abortRequested = false
+
+    try {
+      session.getNext(oids, (error: unknown, varbinds: unknown[]) => {
+        const responseTime = Date.now() - startTime
+
+        if (abortRequested) {
+          finish(session, {
+            success: true,
+            varbinds: [],
+            aborted: true,
+            responseTime,
+            timestamp: Date.now()
+          })
+          return
+        }
+
+        if (error) {
+          finish(session, {
+            success: false,
+            varbinds: [],
+            error: String(error),
+            responseTime,
+            timestamp: Date.now()
+          })
+          return
+        }
+
+        const results = (varbinds || []).map((vb: unknown) =>
+          formatVarbindValue(vb as { oid: string; type: number; value: unknown })
+        )
+
+        finish(session, {
+          success: true,
+          varbinds: results,
           responseTime,
           timestamp: Date.now()
         })
-        return
-      }
-
-      const results = (varbinds || []).map((vb: unknown) =>
-        formatVarbindValue(vb as { oid: string; type: number; value: unknown })
-      )
-
-      session.close()
-      resolve({
-        success: true,
-        varbinds: results,
-        responseTime,
+      })
+    } catch (e) {
+      finish(session, {
+        success: false,
+        varbinds: [],
+        error: String(e),
+        responseTime: Date.now() - startTime,
         timestamp: Date.now()
       })
-    })
+    }
   })
 }
 
@@ -244,34 +395,84 @@ export function snmpGetBulk(
 ): Promise<SnmpResult> {
   return new Promise((resolve) => {
     const startTime = Date.now()
-    const session = createSession(config)
+    let settled = false
 
-    session.getBulk(oids, nonRepeaters, maxRepetitions, (error: unknown, varbinds: unknown[]) => {
-      const responseTime = Date.now() - startTime
+    const finish = (session: SnmpSession | null, result: SnmpResult): void => {
+      if (settled) return
+      settled = true
+      if (currentSession === session) currentSession = null
+      if (session) {
+        try {
+          session.close()
+        } catch {
+          // Already closed.
+        }
+      }
+      resolve(result)
+    }
 
-      if (error) {
-        session.close()
-        resolve({
-          success: false,
-          varbinds: [],
-          error: String(error),
+    let session: SnmpSession
+    try {
+      session = createSession(config)
+    } catch (e) {
+      finish(null, {
+        success: false,
+        varbinds: [],
+        error: String(e),
+        responseTime: Date.now() - startTime,
+        timestamp: Date.now()
+      })
+      return
+    }
+
+    currentSession = session
+    abortRequested = false
+
+    try {
+      session.getBulk(oids, nonRepeaters, maxRepetitions, (error: unknown, varbinds: unknown[]) => {
+        const responseTime = Date.now() - startTime
+
+        if (abortRequested) {
+          finish(session, {
+            success: true,
+            varbinds: [],
+            aborted: true,
+            responseTime,
+            timestamp: Date.now()
+          })
+          return
+        }
+
+        if (error) {
+          finish(session, {
+            success: false,
+            varbinds: [],
+            error: String(error),
+            responseTime,
+            timestamp: Date.now()
+          })
+          return
+        }
+
+        const flat = flattenBulkVarbinds(varbinds || [], nonRepeaters)
+        const results = flat.map((vb) => formatVarbindValue(vb))
+
+        finish(session, {
+          success: true,
+          varbinds: results,
           responseTime,
           timestamp: Date.now()
         })
-        return
-      }
-
-      const flat = flattenBulkVarbinds(varbinds || [], nonRepeaters)
-      const results = flat.map((vb) => formatVarbindValue(vb))
-
-      session.close()
-      resolve({
-        success: true,
-        varbinds: results,
-        responseTime,
+      })
+    } catch (e) {
+      finish(session, {
+        success: false,
+        varbinds: [],
+        error: String(e),
+        responseTime: Date.now() - startTime,
         timestamp: Date.now()
       })
-    })
+    }
   })
 }
 
@@ -281,7 +482,38 @@ export function snmpGetBulk(
 export function snmpSet(config: SnmpConfig, values: SnmpSetValue[]): Promise<SnmpResult> {
   return new Promise((resolve) => {
     const startTime = Date.now()
-    const session = createSession(config)
+    let settled = false
+
+    const finish = (session: SnmpSession | null, result: SnmpResult): void => {
+      if (settled) return
+      settled = true
+      if (currentSession === session) currentSession = null
+      if (session) {
+        try {
+          session.close()
+        } catch {
+          // Already closed.
+        }
+      }
+      resolve(result)
+    }
+
+    let session: SnmpSession
+    try {
+      session = createSession(config)
+    } catch (e) {
+      finish(null, {
+        success: false,
+        varbinds: [],
+        error: String(e),
+        responseTime: Date.now() - startTime,
+        timestamp: Date.now()
+      })
+      return
+    }
+
+    currentSession = session
+    abortRequested = false
 
     const typeMap: Record<string, number> = {
       'INTEGER': snmp.ObjectType.Integer,
@@ -302,33 +534,52 @@ export function snmpSet(config: SnmpConfig, values: SnmpSetValue[]): Promise<Snm
       value: v.value
     }))
 
-    session.set(varbinds, (error: unknown, varbinds: unknown[]) => {
-      const responseTime = Date.now() - startTime
+    try {
+      session.set(varbinds, (error: unknown, responseVarbinds: unknown[]) => {
+        const responseTime = Date.now() - startTime
 
-      if (error) {
-        session.close()
-        resolve({
-          success: false,
-          varbinds: [],
-          error: String(error),
+        if (abortRequested) {
+          finish(session, {
+            success: true,
+            varbinds: [],
+            aborted: true,
+            responseTime,
+            timestamp: Date.now()
+          })
+          return
+        }
+
+        if (error) {
+          finish(session, {
+            success: false,
+            varbinds: [],
+            error: String(error),
+            responseTime,
+            timestamp: Date.now()
+          })
+          return
+        }
+
+        const results = (responseVarbinds || []).map((vb: unknown) =>
+          formatVarbindValue(vb as { oid: string; type: number; value: unknown })
+        )
+
+        finish(session, {
+          success: true,
+          varbinds: results,
           responseTime,
           timestamp: Date.now()
         })
-        return
-      }
-
-      const results = (varbinds || []).map((vb: unknown) =>
-        formatVarbindValue(vb as { oid: string; type: number; value: unknown })
-      )
-
-      session.close()
-      resolve({
-        success: true,
-        varbinds: results,
-        responseTime,
+      })
+    } catch (e) {
+      finish(session, {
+        success: false,
+        varbinds: [],
+        error: String(e),
+        responseTime: Date.now() - startTime,
         timestamp: Date.now()
       })
-    })
+    }
   })
 }
 
@@ -364,13 +615,57 @@ function oidInSubtree(oid: string, rootOid: string): boolean {
 export function snmpWalk(config: SnmpConfig, rootOid: string): Promise<SnmpResult> {
   return new Promise((resolve) => {
     const startTime = Date.now()
-    const session = createSession(config)
     const results: SnmpVarbind[] = []
+    let settled = false
 
-    const callback = (error: unknown, varbinds: unknown[]) => {
+    const finish = (session: SnmpSession | null, result: SnmpResult): void => {
+      if (settled) return
+      settled = true
+      if (currentSession === session) currentSession = null
+      if (session) {
+        try {
+          session.close()
+        } catch {
+          // Already closed (e.g. abort triggered the closure).
+        }
+      }
+      resolve(result)
+    }
+
+    let session: SnmpSession
+    try {
+      session = createSession(config)
+    } catch (e) {
+      finish(null, {
+        success: false,
+        varbinds: [],
+        error: String(e),
+        responseTime: Date.now() - startTime,
+        timestamp: Date.now()
+      })
+      return
+    }
+
+    currentSession = session
+    abortRequested = false
+
+    const callback = (error: unknown, varbinds: unknown[]): void => {
+      // Abort takes priority over both the error and the success branches:
+      // close() triggers this callback with "Socket forcibly closed", but we
+      // want to resolve as aborted with whatever rows we already collected.
+      if (abortRequested) {
+        finish(session, {
+          success: true,
+          varbinds: results,
+          aborted: true,
+          responseTime: Date.now() - startTime,
+          timestamp: Date.now()
+        })
+        return
+      }
+
       if (error) {
-        session.close()
-        resolve({
+        finish(session, {
           success: false,
           varbinds: results,
           error: String(error),
@@ -385,8 +680,7 @@ export function snmpWalk(config: SnmpConfig, rootOid: string): Promise<SnmpResul
         // noSuchInstance (129) / noSuchObject (128) are non-fatal: include
         // them so the UI can show the error indicator, and keep walking.
         if (snmp.isVarbindError(vb) && (vb as { type: number }).type === 130) {
-          session.close()
-          resolve({
+          finish(session, {
             success: true,
             varbinds: results,
             responseTime: Date.now() - startTime,
@@ -400,8 +694,7 @@ export function snmpWalk(config: SnmpConfig, rootOid: string): Promise<SnmpResul
         // so we must check BEFORE pushing — otherwise empty tables would
         // leak the next sibling's first instance into the results.
         if (!oidInSubtree(vb.oid, rootOid)) {
-          session.close()
-          resolve({
+          finish(session, {
             success: true,
             varbinds: results,
             responseTime: Date.now() - startTime,
@@ -419,10 +712,23 @@ export function snmpWalk(config: SnmpConfig, rootOid: string): Promise<SnmpResul
         // the OID back into getNext so the request is well-formed regardless
         // of how net-snmp's input parser treats leading dots.
         const lastOid = stripLeadingDot((varbinds[varbinds.length - 1] as { oid: string }).oid)
-        session.getNext([lastOid], callback)
+        // Do not re-issue if a cancel landed between the for-loop and here;
+        // the socket may already be closing. The next callback (delivered by
+        // the close path) will see abortRequested and resolve as aborted.
+        if (abortRequested) return
+        try {
+          session.getNext([lastOid], callback)
+        } catch (e) {
+          finish(session, {
+            success: false,
+            varbinds: results,
+            error: String(e),
+            responseTime: Date.now() - startTime,
+            timestamp: Date.now()
+          })
+        }
       } else {
-        session.close()
-        resolve({
+        finish(session, {
           success: true,
           varbinds: results,
           responseTime: Date.now() - startTime,
@@ -431,7 +737,17 @@ export function snmpWalk(config: SnmpConfig, rootOid: string): Promise<SnmpResul
       }
     }
 
-    session.getNext([rootOid], callback)
+    try {
+      session.getNext([rootOid], callback)
+    } catch (e) {
+      finish(session, {
+        success: false,
+        varbinds: results,
+        error: String(e),
+        responseTime: Date.now() - startTime,
+        timestamp: Date.now()
+      })
+    }
   })
 }
 
@@ -443,13 +759,54 @@ export function snmpBulkWalk(
 ): Promise<SnmpResult> {
   return new Promise((resolve) => {
     const startTime = Date.now()
-    const session = createSession(config)
     const results: SnmpVarbind[] = []
+    let settled = false
 
-    const callback = (error: unknown, varbinds: unknown[]) => {
+    const finish = (session: SnmpSession | null, result: SnmpResult): void => {
+      if (settled) return
+      settled = true
+      if (currentSession === session) currentSession = null
+      if (session) {
+        try {
+          session.close()
+        } catch {
+          // Already closed.
+        }
+      }
+      resolve(result)
+    }
+
+    let session: SnmpSession
+    try {
+      session = createSession(config)
+    } catch (e) {
+      finish(null, {
+        success: false,
+        varbinds: [],
+        error: String(e),
+        responseTime: Date.now() - startTime,
+        timestamp: Date.now()
+      })
+      return
+    }
+
+    currentSession = session
+    abortRequested = false
+
+    const callback = (error: unknown, varbinds: unknown[]): void => {
+      if (abortRequested) {
+        finish(session, {
+          success: true,
+          varbinds: results,
+          aborted: true,
+          responseTime: Date.now() - startTime,
+          timestamp: Date.now()
+        })
+        return
+      }
+
       if (error) {
-        session.close()
-        resolve({
+        finish(session, {
           success: false,
           varbinds: results,
           error: String(error),
@@ -484,8 +841,7 @@ export function snmpBulkWalk(
       }
 
       if (hitEndOfMib || flat.length === 0 || !lastOid) {
-        session.close()
-        resolve({
+        finish(session, {
           success: true,
           varbinds: results,
           responseTime: Date.now() - startTime,
@@ -494,10 +850,35 @@ export function snmpBulkWalk(
         return
       }
 
+      // Do not re-issue if a cancel landed between the for-loop and here;
+      // the socket may already be closing. The next callback (delivered by
+      // the close path) will see abortRequested and resolve as aborted.
+      if (abortRequested) return
+
       // Strip leading dot before recursing — see snmpWalk for rationale.
-      session.getBulk([stripLeadingDot(lastOid)], 0, maxRepetitions, callback)
+      try {
+        session.getBulk([stripLeadingDot(lastOid)], 0, maxRepetitions, callback)
+      } catch (e) {
+        finish(session, {
+          success: false,
+          varbinds: results,
+          error: String(e),
+          responseTime: Date.now() - startTime,
+          timestamp: Date.now()
+        })
+      }
     }
 
-    session.getBulk([rootOid], 0, maxRepetitions, callback)
+    try {
+      session.getBulk([rootOid], 0, maxRepetitions, callback)
+    } catch (e) {
+      finish(session, {
+        success: false,
+        varbinds: results,
+        error: String(e),
+        responseTime: Date.now() - startTime,
+        timestamp: Date.now()
+      })
+    }
   })
 }

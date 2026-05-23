@@ -78,6 +78,12 @@ try {
 - Constructing a `ResultRow` or `ResultColumn` literal inside any component is forbidden. The only producer is `buildResultSession` in `src/renderer/src/utils/resultColumns.ts`. If a new operation shape needs different column-resolution logic, extend `buildResultSession` (or add a sibling helper next to it) — do not inline.
 - `appStore.setResult` is the only allowed writer for `currentResult`. The legacy `addResult` / `addResults` setters and the `results: ResultRow[]` field are kept as compile-only shims for the old transcript view; do not introduce new callers. `clearResults` is the only other path that touches `currentResult` and it sets it to `null`.
 - Failure handling uses `appMessage.error(result.error)` plus `setStatusMessage('Error: …')`. Do not call `setResult(emptySession)` to "show" an error — leave `currentResult` as `null` so the empty-state UI renders.
+- **User-cancel (`result.aborted === true`) lives inside the `if (result.success)` branch as a nested check** and goes through `buildResultSession` + `setResult` exactly like the success path — partial varbinds (only meaningful for WALK / BULK_WALK; empty for GET / SET / GETBULK abort) are persisted so the user sees what they cancelled. The cancel branch:
+  - does **not** mutate `connectionStatus` (the prior `connected` / `connecting` value stays; the connection is still alive)
+  - does **not** call `appMessage.error` / `appMessage.info` / `appMessage.success` (the status bar text is the sole feedback channel)
+  - sets `setStatusMessage(`${op}: aborted at ${session.rows.length} row(s), ${result.responseTime}ms`)`
+  - does **not** call `onClose()` on dialog-based triggers (GET / SET dialogs stay open so the user can see what they cancelled and retry or close manually)
+  - All four trigger sites — `QueryPanel.handleSend`, `MibTreePanel.executeSnmpOperation`, `SetMultiNodeDialog.handleSubmit`, `GetMultiNodeDialog.handleSubmit` — must implement this branch. Missing it on any one site means cancel reverts that trigger's panel to the empty state (because the success path's `setResult(null)` already fired in step 1).
 - New trigger sites (e.g. a future "rerun last operation" button) reuse this exact sequence. Pulling it into a `useSnmpOperation` hook is acceptable as long as every caller of that hook ends up at `setResult` + `buildResultSession`.
 
 ---

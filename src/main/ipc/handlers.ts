@@ -2,7 +2,7 @@ import { ipcMain, dialog, BrowserWindow } from 'electron'
 import type { IpcMainInvokeEvent } from 'electron'
 import { MibParser, buildMibTree, resolveOidToName } from '../mib/parser'
 import type { MibParseResult, MibNode, MibModule } from '../mib/types'
-import { snmpGet, snmpGetNext, snmpGetBulk, snmpSet, snmpWalk, snmpBulkWalk } from '../snmp/client'
+import { snmpGet, snmpGetNext, snmpGetBulk, snmpSet, snmpWalk, snmpBulkWalk, cancelCurrentSnmpOperation } from '../snmp/client'
 import type { SnmpConfig, SnmpResult, SnmpSetValue, SnmpVarbind } from '../snmp/types'
 import { readFileSync, writeFileSync, existsSync, unlinkSync, readdirSync, mkdirSync } from 'fs'
 import { join, basename } from 'path'
@@ -199,6 +199,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('snmp:set', handleSnmpSet)
   ipcMain.handle('snmp:walk', handleSnmpWalk)
   ipcMain.handle('snmp:bulk-walk', handleSnmpBulkWalk)
+  ipcMain.handle('snmp:cancel', handleSnmpCancel)
 
   // Connection profiles
   ipcMain.handle('profile:save', handleSaveProfile)
@@ -489,6 +490,15 @@ async function handleSnmpBulkWalk(
     }
   }
   return result
+}
+
+/**
+ * Cancel the currently in-flight SNMP operation. Idempotent: returns false
+ * if nothing is running. See `cancelCurrentSnmpOperation` for the close()
+ * mechanics.
+ */
+function handleSnmpCancel(_event: IpcMainInvokeEvent): boolean {
+  return cancelCurrentSnmpOperation()
 }
 
 /**

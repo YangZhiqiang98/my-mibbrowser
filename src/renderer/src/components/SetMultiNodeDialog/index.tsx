@@ -239,15 +239,29 @@ export function SetMultiNodeDialog({ initialSeed, onClose }: SetMultiNodeDialogP
     try {
       const result = await window.api.snmp.set(snmpConfig, values)
       if (result.success) {
-        setConnectionStatus('connected')
-        const session: ResultSession = buildResultSession('SET', values[0].oid, result, mibTree)
-        setResult(session)
-        const baseMsg = `SET: ${session.rows.length} result(s), ${result.responseTime}ms`
-        setStatusMessage(
-          session.rows.length === 0 ? `${baseMsg} — 本次操作结果为空` : baseMsg
-        )
-        appMessage.success(`SET succeeded (${values.length} varbind${values.length > 1 ? 's' : ''})`)
-        onClose()
+        if (result.aborted) {
+          // User-cancelled path. Even though SET is single-shot, the abort
+          // flag may still arrive (close() raced the callback). Persist any
+          // varbinds the device echoed and label the status bar accordingly.
+          // No connectionStatus mutation (D5), no message toast (D4), and
+          // crucially no onClose() — keep the dialog open so the user can see
+          // what they cancelled and either retry or close it themselves.
+          const session: ResultSession = buildResultSession('SET', values[0].oid, result, mibTree)
+          setResult(session)
+          setStatusMessage(
+            `SET: aborted at ${session.rows.length} row(s), ${result.responseTime}ms`
+          )
+        } else {
+          setConnectionStatus('connected')
+          const session: ResultSession = buildResultSession('SET', values[0].oid, result, mibTree)
+          setResult(session)
+          const baseMsg = `SET: ${session.rows.length} result(s), ${result.responseTime}ms`
+          setStatusMessage(
+            session.rows.length === 0 ? `${baseMsg} — 本次操作结果为空` : baseMsg
+          )
+          appMessage.success(`SET succeeded (${values.length} varbind${values.length > 1 ? 's' : ''})`)
+          onClose()
+        }
       } else {
         setConnectionStatus('error')
         appMessage.error(`SNMP error: ${result.error}`)

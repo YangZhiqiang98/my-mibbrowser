@@ -20,6 +20,7 @@ declare global {
         set: (config: SnmpConfig, values: SnmpSetValue[]) => Promise<SnmpResult>
         walk: (config: SnmpConfig, oid: string) => Promise<SnmpResult>
         bulkWalk: (config: SnmpConfig, oid: string, maxReps?: number) => Promise<SnmpResult>
+        cancel: () => Promise<boolean>
       }
       profile: {
         save: (profile: { id: string; name: string; config: SnmpConfig }) => Promise<void>

@@ -23,6 +23,7 @@ import {
 import type { DataNode, EventDataNode } from 'antd/es/tree'
 import { useAppStore } from '../stores/appStore'
 import type { MibTreeNodeData } from '../types'
+import type { SnmpResult } from '../../../main/snmp/types'
 import { buildTreeFromNodes } from '../utils/mibTreeUtils'
 import { buildResultSession } from '../utils/resultColumns'
 import { SetMultiNodeDialog } from './SetMultiNodeDialog'
@@ -325,13 +326,7 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
     setStatusMessage(`Executing ${operation} on ${oid}...`)
 
     try {
-      let result: {
-        success: boolean
-        varbinds: Array<{ oid: string; name?: string; value: string | number | Buffer | null; type: string; isError: boolean; error?: string }>
-        error?: string
-        responseTime: number
-        timestamp: number
-      }
+      let result: SnmpResult
 
       switch (operation) {
         case 'GET':
@@ -365,15 +360,26 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
       }
 
       if (result.success) {
-        setConnectionStatus('connected')
-        const session = buildResultSession(operation, oid, result, mibTree)
-        setResult(session)
-        // PR3 — append "本次操作结果为空" when the response carried zero rows so
-        // the status bar / message line surfaces the empty case without a popup.
-        const baseMsg = `${operation}: ${session.rows.length} result(s), ${result.responseTime}ms`
-        setStatusMessage(
-          session.rows.length === 0 ? `${baseMsg} — 本次操作结果为空` : baseMsg
-        )
+        if (result.aborted) {
+          // User-cancelled path: keep the collected varbinds (WALK / BULK_WALK
+          // partial results) and surface "aborted at N rows" on the status
+          // bar. No connectionStatus mutation (D5), no message toast (D4).
+          const session = buildResultSession(operation, oid, result, mibTree)
+          setResult(session)
+          setStatusMessage(
+            `${operation}: aborted at ${session.rows.length} row(s), ${result.responseTime}ms`
+          )
+        } else {
+          setConnectionStatus('connected')
+          const session = buildResultSession(operation, oid, result, mibTree)
+          setResult(session)
+          // PR3 — append "本次操作结果为空" when the response carried zero rows so
+          // the status bar / message line surfaces the empty case without a popup.
+          const baseMsg = `${operation}: ${session.rows.length} result(s), ${result.responseTime}ms`
+          setStatusMessage(
+            session.rows.length === 0 ? `${baseMsg} — 本次操作结果为空` : baseMsg
+          )
+        }
       } else {
         setConnectionStatus('error')
         message.error(`SNMP error: ${result.error}`)

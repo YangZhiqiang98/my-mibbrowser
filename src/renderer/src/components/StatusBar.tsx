@@ -1,4 +1,6 @@
 import React from 'react'
+import { Button, Tooltip } from 'antd'
+import { StopOutlined } from '@ant-design/icons'
 import { useAppStore } from '../stores/appStore'
 
 export function StatusBar(): React.ReactElement {
@@ -11,9 +13,14 @@ export function StatusBar(): React.ReactElement {
   // surface zero-vs-N truth.
   const currentResult = useAppStore((s) => s.currentResult)
   const loadedModules = useAppStore((s) => s.loadedModules)
+  const isQuerying = useAppStore((s) => s.isQuerying)
 
   const resultsCount = currentResult?.rows.length ?? 0
   const isEmptyResultSession = currentResult !== null && currentResult.rows.length === 0
+
+  const handleAbort = (): void => {
+    void window.api.snmp.cancel()
+  }
 
   const statusLabel = {
     disconnected: 'Ready',
@@ -33,6 +40,22 @@ export function StatusBar(): React.ReactElement {
         {isEmptyResultSession && (
           <span style={{ color: '#fa8c16' }}>本次操作结果为空</span>
         )}
+        <Tooltip title={isQuerying ? '中止当前 SNMP 操作' : '当前无运行中的操作'}>
+          {/* span wrapper keeps the Tooltip working when the Button is disabled */}
+          <span>
+            <Button
+              type="text"
+              danger
+              size="small"
+              icon={<StopOutlined />}
+              onClick={handleAbort}
+              disabled={!isQuerying}
+              style={{ marginLeft: 8 }}
+            >
+              取消
+            </Button>
+          </span>
+        </Tooltip>
       </div>
       <div className="status-bar-right">
         <span>Host: {config.host}:{config.port}</span>

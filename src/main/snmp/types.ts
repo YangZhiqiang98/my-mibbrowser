@@ -85,6 +85,14 @@ export interface SnmpResult {
   responseTime: number
   /** Timestamp */
   timestamp: number
+  /**
+   * Whether the operation was aborted by the user via
+   * `cancelCurrentSnmpOperation()`. When true, `success` is still `true` and
+   * `varbinds` contains whatever rows were collected before the abort
+   * (non-empty only for WALK / BULK_WALK). Left optional so callers can write
+   * `if (result.aborted)` and treat `undefined` as "not aborted".
+   */
+  aborted?: boolean
 }
 
 /**

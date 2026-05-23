@@ -31,7 +31,8 @@ const api = {
     walk: (config: SnmpConfig, oid: string): Promise<SnmpResult> =>
       ipcRenderer.invoke('snmp:walk', config, oid),
     bulkWalk: (config: SnmpConfig, oid: string, maxReps?: number): Promise<SnmpResult> =>
-      ipcRenderer.invoke('snmp:bulk-walk', config, oid, maxReps)
+      ipcRenderer.invoke('snmp:bulk-walk', config, oid, maxReps),
+    cancel: (): Promise<boolean> => ipcRenderer.invoke('snmp:cancel')
   },
 
   // Connection profiles

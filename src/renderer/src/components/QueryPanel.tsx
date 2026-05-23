@@ -8,7 +8,7 @@ import {
 } from '@ant-design/icons'
 import { useAppStore } from '../stores/appStore'
 import { buildResultSession } from '../utils/resultColumns'
-import type { SnmpOperation } from '../../../main/snmp/types'
+import type { SnmpOperation, SnmpResult } from '../../../main/snmp/types'
 
 export function QueryPanel(): React.ReactElement {
   const config = useAppStore((s) => s.snmpConfig)
@@ -60,13 +60,7 @@ export function QueryPanel(): React.ReactElement {
     try {
       const oids = queryOid.split(',').map(s => s.trim()).filter(s => s.length > 0)
 
-      let result: {
-        success: boolean
-        varbinds: Array<{ oid: string; name?: string; value: string | number | Buffer | null; type: string; isError: boolean; error?: string }>
-        error?: string
-        responseTime: number
-        timestamp: number
-      }
+      let result: SnmpResult
 
       switch (queryOperation) {
         case 'GET':
@@ -100,15 +94,27 @@ export function QueryPanel(): React.ReactElement {
       }
 
       if (result.success) {
-        setConnectionStatus('connected')
-        const session = buildResultSession(queryOperation, oids[0] ?? '', result, mibTree)
-        setResult(session)
-        // PR3 — empty-result status text suffix so the status bar surfaces
-        // "no data" without resorting to a modal / toast.
-        const baseMsg = `${queryOperation}: ${session.rows.length} result(s), ${result.responseTime}ms`
-        setStatusMessage(
-          session.rows.length === 0 ? `${baseMsg} — 本次操作结果为空` : baseMsg
-        )
+        if (result.aborted) {
+          // User-cancelled path: persist whatever rows were already collected
+          // (WALK / BULK_WALK partial results) and label the status bar as
+          // aborted. Do NOT touch connectionStatus (D5) and do NOT pop a
+          // message toast (D4) — status bar text is the sole feedback.
+          const session = buildResultSession(queryOperation, oids[0] ?? '', result, mibTree)
+          setResult(session)
+          setStatusMessage(
+            `${queryOperation}: aborted at ${session.rows.length} row(s), ${result.responseTime}ms`
+          )
+        } else {
+          setConnectionStatus('connected')
+          const session = buildResultSession(queryOperation, oids[0] ?? '', result, mibTree)
+          setResult(session)
+          // PR3 — empty-result status text suffix so the status bar surfaces
+          // "no data" without resorting to a modal / toast.
+          const baseMsg = `${queryOperation}: ${session.rows.length} result(s), ${result.responseTime}ms`
+          setStatusMessage(
+            session.rows.length === 0 ? `${baseMsg} — 本次操作结果为空` : baseMsg
+          )
+        }
       } else {
         setConnectionStatus('error')
         message.error(`SNMP error: ${result.error}`)
