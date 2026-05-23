@@ -6,6 +6,9 @@ dist/
 Thumbs.db
 .env
 .env.local
+__pycache__/
+*.pyc
+.trellis/.runtime/
 
 # IDE / agent tooling: only ignore local-only config, keep shared skills/agents/commands in repo
 .claude/settings.local.json
