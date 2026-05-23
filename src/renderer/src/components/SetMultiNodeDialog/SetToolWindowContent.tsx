@@ -26,8 +26,7 @@ import {
   publishToastToMain
 } from '../toolWindowHelpers'
 import { SetRow } from './SetRow'
-import { validateGetRow } from '../GetMultiNodeDialog/rowUtils'
-import { buildFullOid, isDuplicate, stripBaseOid, validateRow } from './rowUtils'
+import { buildFullOid, isDuplicate, stripBaseOid, validateGetRow, validateRow } from './rowUtils'
 import { useSetRows } from './useSetRows'
 import type { SetRowError, SetRowPatch } from './types'
 

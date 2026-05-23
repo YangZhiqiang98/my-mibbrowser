@@ -1,7 +1,7 @@
 import type { MibTreeNodeData } from '../../types'
 
 /**
- * One editable row inside the multi-node SET dialog.
+ * One editable row inside the GET / SET tool window.
  *
  * `rowId` is a frontend-only uuid (independent of `node.id`) so the same MIB
  * node can appear twice with different instances.
@@ -57,10 +57,10 @@ export type SetRowPatch = Partial<
 >
 
 /**
- * Seed for opening the SetMultiNodeDialog. Right-click SET passes just a
- * node (defaults to instance='0' and empty target). The GET dialog's
- * "转为 SET" handoff passes a fully-specified seed so the first row arrives
- * with instance + targetValue pre-filled.
+ * Seed for opening the tool window from a SET action. Right-click SET passes
+ * just a node (defaults to instance='0' and empty target). Callers may pass a
+ * fully-specified seed so the first row arrives with instance + targetValue
+ * pre-filled.
  */
 export interface SetSeed {
   node: MibTreeNodeData

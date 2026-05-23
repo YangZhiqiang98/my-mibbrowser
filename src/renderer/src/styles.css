@@ -482,37 +482,6 @@ html, body, #root {
   background: #a8a8a8;
 }
 
-/* Multi-node GET / SET dialogs are intentionally non-modal: the transparent
-   AntD root + wrap must not intercept clicks, while the dialog panel itself
-   remains interactive. */
-.set-multi-node-dialog-root,
-.set-multi-node-dialog-wrap {
-  pointer-events: none;
-}
-.set-multi-node-dialog-root .ant-modal,
-.set-multi-node-dialog-wrap .ant-modal {
-  pointer-events: auto;
-}
-
-.get-multi-node-dialog-root,
-.get-multi-node-dialog-wrap {
-  pointer-events: none;
-}
-.get-multi-node-dialog-root .ant-modal,
-.get-multi-node-dialog-wrap .ant-modal {
-  pointer-events: auto;
-}
-
-.non-modal-dialog-title {
-  cursor: move;
-  user-select: none;
-}
-
-.non-modal-dialog-drag-region {
-  cursor: move;
-  user-select: none;
-}
-
 /* Independent Electron GET / SET tool windows */
 .tool-window-container {
   height: 100vh;

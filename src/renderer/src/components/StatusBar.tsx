@@ -7,10 +7,6 @@ export function StatusBar(): React.ReactElement {
   const connectionStatus = useAppStore((s) => s.connectionStatus)
   const statusMessage = useAppStore((s) => s.statusMessage)
   const config = useAppStore((s) => s.snmpConfig)
-  // PR3: results count now derives from the current dynamic-column session so
-  // it matches what ResultsPanel actually renders. The legacy `s.results`
-  // array is a permanent empty shim (PR2 deferred its removal) so it cannot
-  // surface zero-vs-N truth.
   const currentResult = useAppStore((s) => s.currentResult)
   const loadedModules = useAppStore((s) => s.loadedModules)
   const isQuerying = useAppStore((s) => s.isQuerying)

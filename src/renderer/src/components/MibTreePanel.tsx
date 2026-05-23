@@ -40,10 +40,8 @@ interface MibTreePanelProps {
 }
 
 export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
-  // PR3 — SET Modal uses App.useApp().message (v5 recommended) so toasts
-  // are bound to the App context the same way Toolbar.tsx already does.
-  // The legacy static `message` import is kept for parse / load paths that
-  // are out of scope for this PR.
+  // Tool-window launch errors use the App-bound message API. The legacy
+  // static `message` import is still used by parse / load paths in this panel.
   const { message: appMessage } = App.useApp()
   const mibTree = useAppStore((s) => s.mibTree)
   const setMibTree = useAppStore((s) => s.setMibTree)
@@ -387,8 +385,8 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
   }, [snmpConfig, mibTree, setResult, setConnectionStatus, setStatusMessage, setIsQuerying])
 
   /**
-   * Open the multi-node SET dialog seeded with the given node. The dialog
-   * itself handles adding more rows (drag-and-drop) and the actual SET call.
+   * Open the independent GET / SET tool window seeded for SET. The tool
+   * window handles adding more rows by drag-and-drop and the actual SET call.
    */
   const openSetDialog = useCallback((node: MibTreeNodeData) => {
     if (!node.oid) {
@@ -406,10 +404,9 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
   }, [appMessage, mibTree, snmpConfig])
 
   /**
-   * Open the multi-node GET dialog. Right-click GET goes through this
-   * instead of firing `executeSnmpOperation('GET', ...)` directly, so the
-   * user can pick an instance suffix (and optionally drag in more nodes)
-   * before the request is sent.
+   * Open the independent GET / SET tool window seeded for GET. Right-click
+   * GET goes through this instead of firing directly so the user can pick an
+   * instance suffix before the request is sent.
    */
   const openGetDialog = useCallback((node: MibTreeNodeData) => {
     if (!node.oid) {
@@ -466,10 +463,9 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
             onClick: () => executeSnmpOperation('BULK_WALK', contextMenuNode)
           },
           {
-            // Right-click SET opens the multi-node SET dialog (replaces the
-            // legacy single-OID modal). Enabled when the node has any OID;
-            // the device rejects illegal writes through the dialog's error
-            // path. Use the dialog to add more rows by drag-and-drop.
+            // Right-click SET opens the GET / SET tool window. Enabled when
+            // the node has any OID; the device rejects illegal writes through
+            // the tool window's error path.
             key: 'snmp-set',
             icon: <EditOutlined />,
             label: 'SET',

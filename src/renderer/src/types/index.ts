@@ -57,22 +57,6 @@ declare global {
 }
 
 /**
- * SNMP result row for display in the results table (legacy shape, retained
- * for backward compatibility with code paths that have not yet migrated to
- * the dynamic-column ResultSession model)
- */
-export interface ResultRow {
-  key: string
-  oid: string
-  name: string
-  value: string
-  type: string
-  status: 'success' | 'error' | 'timeout'
-  timestamp: string
-  responseTime: number
-}
-
-/**
  * A single cell in the dynamic-column results table.
  *
  * `value` is the already-formatted display text (Buffer decoding / TimeTicks

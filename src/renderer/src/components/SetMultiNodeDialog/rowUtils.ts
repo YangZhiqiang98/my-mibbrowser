@@ -61,10 +61,18 @@ export function validateRow(row: SetRowDraft): SetRowError | null {
   return null
 }
 
+export function validateGetRow(row: Pick<SetRowDraft, 'rowId' | 'node' | 'instance'>): SetRowError | null {
+  const fullOid = buildFullOid(row.node.oid, row.instance)
+  if (!OID_PATTERN.test(fullOid)) {
+    return { rowId: row.rowId, field: 'fullOid', message: `OID invalid: ${fullOid || '(empty)'}` }
+  }
+  return null
+}
+
 /**
  * Map a MIB syntax string to one of the SNMP SET type option labels.
  * Falls back to OCTET STRING when no confident match. Lifted out of
- * MibTreePanel so the new dialog and any future caller share one rule.
+ * MibTreePanel so the tool window and any future caller share one rule.
  */
 export function guessSetTypeFromSyntax(syntax: string): string {
   const upper = (syntax || '').toUpperCase()
@@ -78,7 +86,7 @@ export function guessSetTypeFromSyntax(syntax: string): string {
 }
 
 /**
- * Build the seed row when a node is added to the dialog. `rowId` is fresh,
+ * Build the seed row when a node is added to the tool window. `rowId` is fresh,
  * `instance` defaults to '.0' so scalar SETs work without typing, type is
  * guessed from syntax, and the current value starts in `idle`.
  */
