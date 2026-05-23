@@ -340,3 +340,58 @@ Search改为Enter触发; snmpWalk/BulkWalk区分endOfMibView与noSuchInstance; G
 ### Next Steps
 
 - None - task complete
+
+---
+
+## 2026-05-23 — 05-23-set-multi-node-dialog 启动
+
+### 决策调整（基于现状探查）
+1. **不引入测试框架**：项目尚未装 vitest/jest，本任务不顺带接入，纯逻辑靠 TS + 手测覆盖；后续单独立任务接 vitest。
+2. **拖拽实现降级**（PRD 风险段早有兜底）：
+   - **不装 @dnd-kit**：antd 6 Tree 的 `draggable` 不暴露原生 DataTransfer。改用 Zustand 临时字段 `pendingDragNode` 在 Tree `onDragStart` 写、Dialog drop 区读。
+   - **行内排序**：不引入新拖拽库，用"上移/下移"按钮 + 行号显示，零依赖。
+3. 后端 IPC 全复用 (`snmp.walk / get / set`)，零改动。
+
+### Phase 进度
+- [in_progress] Phase 1：脚手架文件 + types
+
+### 实施总结
+**新增**：
+- `src/renderer/src/components/SetMultiNodeDialog/`
+  - `types.ts` — SetRowDraft / CurrentValueState / SetRowError / SetRowPatch
+  - `rowUtils.ts` — buildFullOid / stripBaseOid / validateRow / guessSetTypeFromSyntax / makeRowFromNode / isDuplicate
+  - `useSetRows.ts` — 行集合不可变操作 (append/remove/patch/move/reset)
+  - `SetRow.tsx` — 表格单行（Instance 输入或下拉、类型、当前值、目标值、上下移/删除）
+  - `index.tsx` — Modal 外壳 + 拖拽 drop 区 + 提交逻辑 (snmp.walk / snmp.get / snmp.set)
+
+**修改**：
+- `stores/appStore.ts` 新增 `pendingDragNode` + `setPendingDragNode`（拖拽桥接）
+- `components/MibTreePanel.tsx`：
+  - 移除旧 `setModalNode/setFormValue/setFormType`、`handleSetConfirm`、`guessSetTypeFromSyntax`、旧 Modal JSX
+  - 改为 `setDialogSeed` + `openSetDialog`，右键 SET 走新对话框
+  - Tree 加 `draggable`、`onDragStart`/`onDragEnd` 把节点 push 到 store
+
+**零改动后端**：`snmpSet` 已原生支持多 varbind，IPC 全复用。
+
+### 验收
+- `npm run typecheck` ✅
+- `npm run lint` ✅（0 errors / 0 warnings）
+- `npm run build` ✅（4.91s，无错）
+- 手测：留到下次连真实 SNMP agent 时按 PRD 验收清单逐项过。
+
+### 手测反馈修复（同任务迭代）
+- **去掉行内完整 OID Tag**：节点名 Tooltip 仍可查看完整 OID，节省垂直空间。
+- **选 instance 自动 GET**：Instance Select 的 onChange 同时 patch + 触发 fetchCurrentValue(v)。fetchCurrentValue 加 `instanceOverride` 参数避开 state 未更新的时序坑。
+- **syntax 显示清理**：`cleanSyntax()` 截 `{` 或 `(` 之前的主类型名（修 MIB 解析输出形如 `INTEGER { up(1), down(2) }` 的尾巴）。
+- **Modal 不挡 MIB 树**：
+  - `mask={false}` + `maskClosable={false}`
+  - 新增 `.set-multi-node-dialog-wrap { pointer-events: none }` + 内部 `.ant-modal { pointer-events: auto }`，让 wrap 容器透传点击事件到背景树。
+  - `style={{ top: 80 }}` 把面板上推，露出更多树区域便于拖拽。
+- typecheck/lint/build 全通过。
+
+### 追加反馈修复
+- **表头 OID+Instance → Instance**：去掉冗余字样。
+- **删"当前值"独立列**：表格瘦身一列。
+- **目标值列按钮 = 获取并填入**：`onFetchCurrentValue` 加 `applyToTarget` opt，GET 成功后直接写 `targetValue`；按钮 loading/error 沿用原状态机。错误时 Input 标 error + Tooltip 给原因。
+- **Instance Select onChange 改为 applyToTarget: true**：选 instance 后直接把当前值塞进目标值（用户最常见路径就是"基于当前值改"）。
+- typecheck/lint/build 全绿。

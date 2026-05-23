@@ -37,6 +37,14 @@ interface AppState {
   connectionStatus: 'disconnected' | 'connecting' | 'connected' | 'error'
   statusMessage: string
 
+  /**
+   * Transient: the MibTreeNodeData picked up by an in-flight drag from the
+   * MIB tree. Set on Tree onDragStart, cleared on drop / dragend.
+   * SetMultiNodeDialog's drop zone reads this because antd Tree's
+   * `draggable` callback does not expose the native DataTransfer payload.
+   */
+  pendingDragNode: MibTreeNodeData | null
+
   // Actions
   setMibTree: (tree: MibTreeNodeData[]) => void
   setSelectedMibNode: (node: MibTreeNodeData | null) => void
@@ -61,6 +69,7 @@ interface AppState {
 
   setConnectionStatus: (status: AppState['connectionStatus']) => void
   setStatusMessage: (msg: string) => void
+  setPendingDragNode: (node: MibTreeNodeData | null) => void
 }
 
 const defaultConfig: SnmpConfig = {
@@ -93,6 +102,7 @@ export const useAppStore = create<AppState>((set) => ({
   profiles: [],
   connectionStatus: 'disconnected',
   statusMessage: 'Ready',
+  pendingDragNode: null,
 
   // MIB actions
   setMibTree: (tree) => set({ mibTree: tree }),
@@ -129,5 +139,6 @@ export const useAppStore = create<AppState>((set) => ({
 
   // Status actions
   setConnectionStatus: (status) => set({ connectionStatus: status }),
-  setStatusMessage: (msg) => set({ statusMessage: msg })
+  setStatusMessage: (msg) => set({ statusMessage: msg }),
+  setPendingDragNode: (node) => set({ pendingDragNode: node })
 }))

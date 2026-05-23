@@ -456,3 +456,14 @@ html, body, #root {
 ::-webkit-scrollbar-thumb:hover {
   background: #a8a8a8;
 }
+
+/* SetMultiNodeDialog: let pointer events fall through to the MIB tree
+   underneath while the dialog is open, so the user can keep dragging more
+   nodes into the dialog's drop zone. The dialog panel itself re-enables
+   pointer events so its own controls stay interactive. */
+.set-multi-node-dialog-wrap {
+  pointer-events: none;
+}
+.set-multi-node-dialog-wrap .ant-modal {
+  pointer-events: auto;
+}
