@@ -1,0 +1,9 @@
+{"file": ".trellis/tasks/05-23-snmp-walk-bulkwalk-abort/prd.md", "reason": "Authoritative requirements / 6 decisions / AC / 3-PR split / technical approach"}
+{"file": ".trellis/tasks/05-23-snmp-walk-bulkwalk-abort/research/net-snmp-cancel-api.md", "reason": "Net-snmp v3.26.3 close-only cancel mechanism + aborted/settled flag pattern + try/catch ERR_SOCKET_DGRAM_NOT_RUNNING — directly governs the client.ts changes"}
+{"file": ".trellis/spec/backend/snmp-guidelines.md", "reason": "Existing invariants for snmpWalk/snmpBulkWalk subtree boundary, leading-dot normalization, walk loop ordering — must not regress when adding currentSession ref + aborted flag"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "How backend errors are surfaced through IPC results — needed to distinguish abort path from real SNMP error in SnmpResult shape"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Backend quality bar — no resource leaks (currentSession ref must clear in all paths: success / error / abort / sync-throw)"}
+{"file": ".trellis/spec/frontend/mib-tree-snmp-ops.md", "reason": "Single-write-path constraint + the 4 trigger sites listed (QueryPanel.handleSend / MibTreePanel.executeSnmpOperation / SetMultiNodeDialog.handleSubmit / GetMultiNodeDialog.handleSubmit) — all four need to honor result.aborted without breaking the contract"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "appStore.isQuerying single-mutex pattern — abort button uses it as the only enable signal; also relevant: don't add transient cancel state to the store unless absolutely needed"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "StatusBar.tsx structure + antd v6 button/icon conventions + App.useApp() — needed when adding the abort button"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "SnmpResult shape change (adding optional aborted field) — keep explicit types, no any leaks"}

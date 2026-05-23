@@ -1,0 +1,9 @@
+{"file": ".trellis/tasks/05-23-snmp-walk-bulkwalk-abort/prd.md", "reason": "Authoritative AC list to verify against"}
+{"file": ".trellis/tasks/05-23-snmp-walk-bulkwalk-abort/research/net-snmp-cancel-api.md", "reason": "Verify implementation followed the recommended aborted/settled flag pattern; verify try/catch around session.close handles double-close; verify no getNext/getBulk re-issued after close"}
+{"file": ".trellis/spec/backend/snmp-guidelines.md", "reason": "Verify walk loop ordering / subtree boundary / leading-dot rules still hold after introducing abort branches"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Verify abort path is not conflated with real SNMP errors in the SnmpResult shape; verify error vs aborted distinction is preserved end-to-end"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Verify currentSession ref is cleared in ALL exit paths (success / error / abort / sync-throw) — no session leak"}
+{"file": ".trellis/spec/frontend/mib-tree-snmp-ops.md", "reason": "Verify all 4 trigger sites handle result.aborted: write partial result via buildResultSession, update status bar with abort message, do NOT call appMessage.error/info, do NOT change connectionStatus"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Frontend quality bar (typecheck / lint / a11y on the new abort button)"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "Verify abort button enable/disable is driven solely by isQuerying selector, no new transient store state introduced"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "Verify SnmpResult.aborted is optional, no any leaks in the new abort branches"}
