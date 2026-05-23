@@ -535,3 +535,37 @@ Implemented multi-node SET dialog improvements: dnd-kit row sorting, reusable dr
 ### Next Steps
 
 - None - task complete
+
+
+## Session 12: Unified GET SET Electron tool window
+
+**Date**: 2026-05-24
+**Task**: Unified GET SET Electron tool window
+**Branch**: `main`
+
+### Summary
+
+Moved GET/SET from in-window AntD modals to a unified Electron tool window, added typed IPC for window lifecycle/result updates/cross-window drag append, fixed close-time BrowserWindow destruction race, and documented the new contracts.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f45f267` | (see git log) |
+| `d0ffab5` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
