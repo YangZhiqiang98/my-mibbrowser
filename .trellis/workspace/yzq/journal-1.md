@@ -569,3 +569,36 @@ Moved GET/SET from in-window AntD modals to a unified Electron tool window, adde
 ### Next Steps
 
 - None - task complete
+
+
+## Session 13: Optimize device connection settings
+
+**Date**: 2026-05-24
+**Task**: Optimize device connection settings
+**Branch**: `main`
+
+### Summary
+
+Optimized the device connection toolbar into a settings dialog, added SNMP bulk defaults to the shared connection config, exposed abort controls for in-flight SNMP requests, updated related specs, and included the README GPL-3.0 license update.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `4c7c271` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
