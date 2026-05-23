@@ -41,6 +41,17 @@ interface AppState {
 - **Partial setters**: `set<Field>(Partial<T>)` using spread merge for config objects.
 - **Collection actions**: `add<Item>`, `clear<Items>` for arrays.
 
+### SNMP Config Normalization
+
+`snmpConfig` is the single source of truth for device connection settings, including request defaults such as `bulkMaxRepetitions` and `bulkNonRepeaters`. Any path that hydrates a config from persisted profiles or partial updates must pass through `normalizeSnmpConfig(config)` before storing it.
+
+```typescript
+setSnmpConfig: (config) =>
+  set((state) => ({ snmpConfig: normalizeSnmpConfig({ ...state.snmpConfig, ...config }) }))
+```
+
+Why: older saved profiles may not contain newly-added fields. Without normalization, UI controls and SNMP calls can read `undefined` defaults even though the type says `SnmpConfig` is complete.
+
 ---
 
 ## When to Use Global State

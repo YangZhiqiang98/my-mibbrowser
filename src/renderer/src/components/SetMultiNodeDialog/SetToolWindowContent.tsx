@@ -14,7 +14,7 @@ import {
   sortableKeyboardCoordinates,
   verticalListSortingStrategy
 } from '@dnd-kit/sortable'
-import { PlusOutlined, SendOutlined } from '@ant-design/icons'
+import { PlusOutlined, SendOutlined, StopOutlined } from '@ant-design/icons'
 import type { SnmpSetValue } from '../../../../main/snmp/types'
 import type { SnmpToolWindowContext, ToolWindowSetSeed } from '../../../../shared/toolWindowTypes'
 import type { MibTreeNodeData, ResultSession } from '../../types'
@@ -294,6 +294,15 @@ export function SetToolWindowContent({ context }: SetToolWindowContentProps): Re
 
   const submitting = submittingOperation !== null
 
+  const handleAbort = useCallback(async () => {
+    const cancelled = await window.api.snmp.cancel()
+    if (cancelled) {
+      publishStatusToMain({ statusMessage: 'Abort requested...' })
+    } else {
+      appMessage.info('No SNMP request is running')
+    }
+  }, [appMessage])
+
   return (
     <div
       className="tool-window-panel"
@@ -324,6 +333,15 @@ export function SetToolWindowContent({ context }: SetToolWindowContentProps): Re
           >
             执行 SET ({rows.length})
           </Button>
+          {submitting && (
+            <Button
+              danger
+              icon={<StopOutlined />}
+              onClick={handleAbort}
+            >
+              Stop
+            </Button>
+          )}
         </Space>
       </div>
 

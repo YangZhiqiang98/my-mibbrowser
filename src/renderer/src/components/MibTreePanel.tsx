@@ -327,13 +327,18 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
           // returns up to maxRepetitions consecutive rows. Reuse the existing
           // snmpBulkWalk IPC instead of introducing a new endpoint.
           if (node.kind === 'column') {
-            result = await window.api.snmp.bulkWalk(snmpConfig, oid, 10)
+            result = await window.api.snmp.bulkWalk(snmpConfig, oid, snmpConfig.bulkMaxRepetitions)
           } else {
             // Smart multi-column GETBULK: on a table/entry node, fan out across
             // every column OID under the entry so a single getBulk returns
             // rows from all columns. Falls back to single OID for leaves.
             const oids = resolveBulkOids(node)
-            result = await window.api.snmp.getBulk(snmpConfig, oids, 10)
+            result = await window.api.snmp.getBulk(
+              snmpConfig,
+              oids,
+              snmpConfig.bulkMaxRepetitions,
+              snmpConfig.bulkNonRepeaters
+            )
           }
           break
         }
@@ -341,7 +346,7 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
           result = await window.api.snmp.walk(snmpConfig, oid)
           break
         case 'BULK_WALK':
-          result = await window.api.snmp.bulkWalk(snmpConfig, oid, 10)
+          result = await window.api.snmp.bulkWalk(snmpConfig, oid, snmpConfig.bulkMaxRepetitions)
           break
       }
 

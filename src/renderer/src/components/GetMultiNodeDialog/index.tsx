@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { Modal, App, Empty, Space, Button, Tag } from 'antd'
-import { SendOutlined } from '@ant-design/icons'
+import { SendOutlined, StopOutlined } from '@ant-design/icons'
 import { useAppStore } from '../../stores/appStore'
 import type { MibTreeNodeData, ResultSession } from '../../types'
 import { buildResultSession } from '../../utils/resultColumns'
@@ -217,6 +217,15 @@ export function GetMultiNodeDialog({ initialNode, onClose }: GetMultiNodeDialogP
     appMessage
   ])
 
+  const handleAbort = useCallback(async () => {
+    const cancelled = await window.api.snmp.cancel()
+    if (cancelled) {
+      setStatusMessage('Abort requested...')
+    } else {
+      appMessage.info('No SNMP request is running')
+    }
+  }, [appMessage, setStatusMessage])
+
   return (
     <Modal
       title={
@@ -240,6 +249,18 @@ export function GetMultiNodeDialog({ initialNode, onClose }: GetMultiNodeDialogP
       style={{ top: 80 }}
       footer={[
         <Button key="cancel" onClick={onClose} disabled={submitting}>取消</Button>,
+        ...(submitting
+          ? [
+              <Button
+                key="abort"
+                danger
+                icon={<StopOutlined />}
+                onClick={handleAbort}
+              >
+                Stop
+              </Button>
+            ]
+          : []),
         <Button
           key="ok"
           type="primary"

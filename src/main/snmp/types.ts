@@ -51,6 +51,10 @@ export interface SnmpConfig {
   timeout: number
   /** Number of retries */
   retries: number
+  /** Default max repetitions for GETBULK / BULK_WALK */
+  bulkMaxRepetitions: number
+  /** Default non-repeaters for GETBULK */
+  bulkNonRepeaters: number
 }
 
 /**

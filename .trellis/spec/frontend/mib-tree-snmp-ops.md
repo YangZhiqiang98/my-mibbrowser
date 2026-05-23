@@ -16,7 +16,12 @@ When the user triggers a GETBULK on a node whose `kind === 'table'` or `kind ===
 
 ```typescript
 const oids = resolveBulkOids(node)
-window.api.snmp.getBulk(snmpConfig, oids, /* maxRepetitions */ 10)
+window.api.snmp.getBulk(
+  snmpConfig,
+  oids,
+  snmpConfig.bulkMaxRepetitions,
+  snmpConfig.bulkNonRepeaters
+)
 ```
 
 For any other node kind (`scalar`, `column`, leaf, or unrecognized), GETBULK uses `[node.oid]` — the single-OID behavior. The branching lives in `resolveBulkOids` in `src/renderer/src/components/MibTreePanel.tsx`. Reuse that helper; do not re-derive the column list at each call site.
@@ -39,6 +44,7 @@ Single-OID GETBULK is still correct on a `column` or `scalar`, because there is 
 - The fallback `[node.oid]` is load-bearing: callers can always assume the helper returns at least one OID. Do not change `resolveBulkOids` to return `[]` for malformed trees.
 - When adding a new bulk-shaped operation (e.g. a future "preview first N rows" button), reuse the same helper. If the desired semantics differ enough to need a different shape, add a sibling helper next to `resolveBulkOids` rather than duplicating the `kind` switch.
 - Renderer-side decisions about which OIDs to send belong here, not in the main process. `src/main/snmp/client.ts` accepts an `oids: string[]` and treats them all as repeaters when `nonRepeaters === 0`; it does not (and should not) know about MIB tree structure.
+- `maxRepetitions` and `nonRepeaters` defaults are part of `snmpConfig`. New GETBULK / BULK_WALK trigger sites must read `snmpConfig.bulkMaxRepetitions` and `snmpConfig.bulkNonRepeaters` instead of hard-coding `10` / `0` locally.
 
 ---
 

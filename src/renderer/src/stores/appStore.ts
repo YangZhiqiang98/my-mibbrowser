@@ -85,7 +85,30 @@ const defaultConfig: SnmpConfig = {
   privProtocol: 'des',
   privPassword: '',
   timeout: 5000,
-  retries: 1
+  retries: 1,
+  bulkMaxRepetitions: 10,
+  bulkNonRepeaters: 0
+}
+
+export function normalizeSnmpConfig(config: Partial<SnmpConfig>): SnmpConfig {
+  return {
+    ...defaultConfig,
+    ...config,
+    host: config.host ?? defaultConfig.host,
+    port: config.port ?? defaultConfig.port,
+    version: config.version ?? defaultConfig.version,
+    community: config.community ?? defaultConfig.community,
+    securityLevel: config.securityLevel ?? defaultConfig.securityLevel,
+    username: config.username ?? defaultConfig.username,
+    authProtocol: config.authProtocol ?? defaultConfig.authProtocol,
+    authPassword: config.authPassword ?? defaultConfig.authPassword,
+    privProtocol: config.privProtocol ?? defaultConfig.privProtocol,
+    privPassword: config.privPassword ?? defaultConfig.privPassword,
+    timeout: config.timeout ?? defaultConfig.timeout,
+    retries: config.retries ?? defaultConfig.retries,
+    bulkMaxRepetitions: config.bulkMaxRepetitions ?? defaultConfig.bulkMaxRepetitions,
+    bulkNonRepeaters: config.bulkNonRepeaters ?? defaultConfig.bulkNonRepeaters
+  }
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -94,7 +117,7 @@ export const useAppStore = create<AppState>((set) => ({
   selectedMibNode: null,
   mibSearchResults: [],
   loadedModules: [],
-  snmpConfig: { ...defaultConfig },
+  snmpConfig: normalizeSnmpConfig(defaultConfig),
   queryOid: '',
   queryOperation: 'GET',
   currentResult: null,
@@ -118,7 +141,7 @@ export const useAppStore = create<AppState>((set) => ({
 
   // SNMP config actions
   setSnmpConfig: (config) =>
-    set((state) => ({ snmpConfig: { ...state.snmpConfig, ...config } })),
+    set((state) => ({ snmpConfig: normalizeSnmpConfig({ ...state.snmpConfig, ...config }) })),
   setQueryOid: (oid) => set({ queryOid: oid }),
   setQueryOperation: (op) => set({ queryOperation: op }),
 

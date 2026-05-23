@@ -4,7 +4,8 @@ import {
   SendOutlined,
   SearchOutlined,
   ClearOutlined,
-  RightOutlined
+  RightOutlined,
+  StopOutlined
 } from '@ant-design/icons'
 import { useAppStore } from '../stores/appStore'
 import { buildResultSession } from '../utils/resultColumns'
@@ -23,7 +24,6 @@ export function QueryPanel(): React.ReactElement {
   const setStatusMessage = useAppStore((s) => s.setStatusMessage)
   const setConnectionStatus = useAppStore((s) => s.setConnectionStatus)
 
-  const [maxRepetitions, setMaxRepetitions] = useState(10)
   const [setValue, setSetValue] = useState('')
   const [setType, setSetType] = useState('OCTET STRING')
   // PR3 — QueryPanel defaults to collapsed; session-local only (not persisted).
@@ -67,7 +67,7 @@ export function QueryPanel(): React.ReactElement {
           result = await window.api.snmp.get(config, oids)
           break
         case 'GETBULK':
-          result = await window.api.snmp.getBulk(config, oids, maxRepetitions)
+          result = await window.api.snmp.getBulk(config, oids, config.bulkMaxRepetitions, config.bulkNonRepeaters)
           break
         case 'SET':
           if (!setValue.trim()) {
@@ -85,7 +85,7 @@ export function QueryPanel(): React.ReactElement {
           result = await window.api.snmp.walk(config, oids[0])
           break
         case 'BULK_WALK':
-          result = await window.api.snmp.bulkWalk(config, oids[0], maxRepetitions)
+          result = await window.api.snmp.bulkWalk(config, oids[0], config.bulkMaxRepetitions)
           break
         default:
           message.error('Unknown operation')
@@ -128,7 +128,16 @@ export function QueryPanel(): React.ReactElement {
     } finally {
       setIsQuerying(false)
     }
-  }, [config, queryOid, queryOperation, maxRepetitions, setValue, setType, mibTree, setResult, setIsQuerying, setConnectionStatus, setStatusMessage])
+  }, [config, queryOid, queryOperation, setValue, setType, mibTree, setResult, setIsQuerying, setConnectionStatus, setStatusMessage])
+
+  const handleAbort = useCallback(async () => {
+    const cancelled = await window.api.snmp.cancel()
+    if (cancelled) {
+      setStatusMessage('Abort requested...')
+    } else {
+      message.info('No SNMP request is running')
+    }
+  }, [setStatusMessage])
 
   const handleClear = useCallback(() => {
     setResult(null)
@@ -202,8 +211,8 @@ export function QueryPanel(): React.ReactElement {
           <div className="query-form-item">
             <label>Max Repetitions</label>
             <InputNumber
-              value={maxRepetitions}
-              onChange={(v) => setMaxRepetitions(v ?? 10)}
+              value={config.bulkMaxRepetitions}
+              disabled
               min={1}
               max={100}
               size="small"
@@ -257,6 +266,16 @@ export function QueryPanel(): React.ReactElement {
             >
               Send
             </Button>
+            {isQuerying && (
+              <Button
+                danger
+                icon={<StopOutlined />}
+                onClick={handleAbort}
+                size="small"
+              >
+                Stop
+              </Button>
+            )}
             <Tooltip title="Clear results">
               <Button
                 icon={<ClearOutlined />}

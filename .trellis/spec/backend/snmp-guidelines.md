@@ -204,6 +204,27 @@ try { session.getNext([lastOid], callback) } catch (e) { finish(session, /* erro
 
 ---
 
+## Constraint 5: Bulk Defaults Come From `SnmpConfig`
+
+`snmpGetBulk(config, oids, maxRepetitions?, nonRepeaters?)` and `snmpBulkWalk(config, rootOid, maxRepetitions?)` must treat omitted bulk parameters as a request to use the connection configuration defaults:
+
+```typescript
+const effectiveMaxRepetitions = maxRepetitions ?? config.bulkMaxRepetitions
+const effectiveNonRepeaters = nonRepeaters ?? config.bulkNonRepeaters
+```
+
+### Why
+
+Bulk sizing is part of how this app talks to a device, not a local display preference of one component. Keeping those defaults on `SnmpConfig` means toolbar settings, profile loading, direct MIB-tree actions, query-panel actions, and tool-window actions all follow the same device connection contract. It also preserves compatibility when a caller intentionally omits optional IPC arguments.
+
+### How to Apply
+
+- Do not reintroduce hard-coded `10` / `0` defaults inside renderer call sites.
+- If a future operation needs an explicit per-request override, pass it as the optional argument; the backend still falls back to `SnmpConfig` only when the argument is omitted.
+- Any persisted or loaded `SnmpConfig` must include or be normalized to include `bulkMaxRepetitions` and `bulkNonRepeaters`.
+
+---
+
 ## Cross-References
 
 - `src/main/snmp/client.ts` — canonical implementations of `oidInSubtree`, `stripLeadingDot`, `formatVarbindValue`, `snmpWalk`, `snmpBulkWalk`, `snmpGetBulk`, `flattenBulkVarbinds`, `cancelCurrentSnmpOperation`, and the `finish(session, result)` pattern in all six SNMP entry points.

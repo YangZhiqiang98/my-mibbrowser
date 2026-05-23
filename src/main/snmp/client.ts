@@ -391,11 +391,13 @@ export function snmpGetNext(config: SnmpConfig, oids: string[]): Promise<SnmpRes
  * Execute an SNMP GETBULK request
  */
 export function snmpGetBulk(
-  config: SnmpConfig, oids: string[], maxRepetitions = 10, nonRepeaters = 0
+  config: SnmpConfig, oids: string[], maxRepetitions?: number, nonRepeaters?: number
 ): Promise<SnmpResult> {
   return new Promise((resolve) => {
     const startTime = Date.now()
     let settled = false
+    const effectiveMaxRepetitions = maxRepetitions ?? config.bulkMaxRepetitions
+    const effectiveNonRepeaters = nonRepeaters ?? config.bulkNonRepeaters
 
     const finish = (session: SnmpSession | null, result: SnmpResult): void => {
       if (settled) return
@@ -429,7 +431,7 @@ export function snmpGetBulk(
     abortRequested = false
 
     try {
-      session.getBulk(oids, nonRepeaters, maxRepetitions, (error: unknown, varbinds: unknown[]) => {
+      session.getBulk(oids, effectiveNonRepeaters, effectiveMaxRepetitions, (error: unknown, varbinds: unknown[]) => {
         const responseTime = Date.now() - startTime
 
         if (abortRequested) {
@@ -454,7 +456,7 @@ export function snmpGetBulk(
           return
         }
 
-        const flat = flattenBulkVarbinds(varbinds || [], nonRepeaters)
+        const flat = flattenBulkVarbinds(varbinds || [], effectiveNonRepeaters)
         const results = flat.map((vb) => formatVarbindValue(vb))
 
         finish(session, {
@@ -755,12 +757,13 @@ export function snmpWalk(config: SnmpConfig, rootOid: string): Promise<SnmpResul
  * Execute an SNMP Bulk Walk (GETBULK loop) operation
  */
 export function snmpBulkWalk(
-  config: SnmpConfig, rootOid: string, maxRepetitions = 10
+  config: SnmpConfig, rootOid: string, maxRepetitions?: number
 ): Promise<SnmpResult> {
   return new Promise((resolve) => {
     const startTime = Date.now()
     const results: SnmpVarbind[] = []
     let settled = false
+    const effectiveMaxRepetitions = maxRepetitions ?? config.bulkMaxRepetitions
 
     const finish = (session: SnmpSession | null, result: SnmpResult): void => {
       if (settled) return
@@ -857,7 +860,7 @@ export function snmpBulkWalk(
 
       // Strip leading dot before recursing — see snmpWalk for rationale.
       try {
-        session.getBulk([stripLeadingDot(lastOid)], 0, maxRepetitions, callback)
+        session.getBulk([stripLeadingDot(lastOid)], 0, effectiveMaxRepetitions, callback)
       } catch (e) {
         finish(session, {
           success: false,
@@ -870,7 +873,7 @@ export function snmpBulkWalk(
     }
 
     try {
-      session.getBulk([rootOid], 0, maxRepetitions, callback)
+      session.getBulk([rootOid], 0, effectiveMaxRepetitions, callback)
     } catch (e) {
       finish(session, {
         success: false,

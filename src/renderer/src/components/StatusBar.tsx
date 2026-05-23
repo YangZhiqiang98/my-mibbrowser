@@ -14,12 +14,16 @@ export function StatusBar(): React.ReactElement {
   const currentResult = useAppStore((s) => s.currentResult)
   const loadedModules = useAppStore((s) => s.loadedModules)
   const isQuerying = useAppStore((s) => s.isQuerying)
+  const setStatusMessage = useAppStore((s) => s.setStatusMessage)
 
   const resultsCount = currentResult?.rows.length ?? 0
   const isEmptyResultSession = currentResult !== null && currentResult.rows.length === 0
 
-  const handleAbort = (): void => {
-    void window.api.snmp.cancel()
+  const handleAbort = async (): Promise<void> => {
+    const cancelled = await window.api.snmp.cancel()
+    if (cancelled) {
+      setStatusMessage('Abort requested...')
+    }
   }
 
   const statusLabel = {

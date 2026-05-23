@@ -6,7 +6,7 @@ import { MibTreePanel } from './components/MibTreePanel'
 import { QueryPanel } from './components/QueryPanel'
 import { ResultsPanel } from './components/ResultsPanel'
 import { StatusBar } from './components/StatusBar'
-import { useAppStore } from './stores/appStore'
+import { normalizeSnmpConfig, useAppStore } from './stores/appStore'
 import { buildTreeFromNodes } from './utils/mibTreeUtils'
 import type { SnmpToolWindowToast } from '../../shared/toolWindowTypes'
 
@@ -51,7 +51,12 @@ export default function App(): React.ReactElement {
 
   useEffect(() => {
     // Load saved profiles on startup
-    window.api.profile.load().then(setProfiles).catch(() => {})
+    window.api.profile.load().then((profiles) => {
+      setProfiles(profiles.map((profile) => ({
+        ...profile,
+        config: normalizeSnmpConfig(profile.config)
+      })))
+    }).catch(() => {})
     // Hydrate MIB tree and loaded modules from cached backend state on startup
     window.api.mib.getTree().then((nodes) => {
       if (nodes.length === 0) return

@@ -115,4 +115,6 @@ node node_modules/electron/install.js
 
 ## 📄 License
 
-私有项目，未公开发布。
+本项目基于 [GNU General Public License v3.0 (GPL-3.0)](https://www.gnu.org/licenses/gpl-3.0.html) 协议开源发布。
+
+任何对本项目源代码的复制、修改、分发，以及基于本项目的衍生作品，都必须遵循 GPL-3.0 协议，包括以相同协议公开完整源代码。

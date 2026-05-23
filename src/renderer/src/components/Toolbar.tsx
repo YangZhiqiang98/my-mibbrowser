@@ -1,14 +1,16 @@
 import React, { useState, useCallback } from 'react'
-import { Input, Select, InputNumber, Button, Dropdown, Modal, Space, Tooltip, App } from 'antd'
+import { Input, Select, InputNumber, Button, Dropdown, Modal, Tooltip, App, Divider } from 'antd'
 import {
   SettingOutlined,
   SaveOutlined,
   FolderOpenOutlined,
   DeleteOutlined,
   GlobalOutlined,
-  ApiOutlined
+  ApiOutlined,
+  LinkOutlined,
+  StopOutlined
 } from '@ant-design/icons'
-import { useAppStore } from '../stores/appStore'
+import { normalizeSnmpConfig, useAppStore } from '../stores/appStore'
 import type { SnmpConfig, SecurityLevel, AuthProtocol, PrivProtocol } from '../../../main/snmp/types'
 
 export function Toolbar(): React.ReactElement {
@@ -17,9 +19,10 @@ export function Toolbar(): React.ReactElement {
   const setConfig = useAppStore((s) => s.setSnmpConfig)
   const profiles = useAppStore((s) => s.profiles)
   const setProfiles = useAppStore((s) => s.setProfiles)
+  const isQuerying = useAppStore((s) => s.isQuerying)
   const setConnectionStatus = useAppStore((s) => s.setConnectionStatus)
   const setStatusMessage = useAppStore((s) => s.setStatusMessage)
-  const [showV3Config, setShowV3Config] = useState(false)
+  const [showConnectionSettings, setShowConnectionSettings] = useState(false)
   const [profileName, setProfileName] = useState('')
   const [showSaveModal, setShowSaveModal] = useState(false)
   const [isTesting, setIsTesting] = useState(false)
@@ -56,7 +59,16 @@ export function Toolbar(): React.ReactElement {
     }
   }, [config, message, setConnectionStatus, setStatusMessage])
 
-  const handleVersionChange = (version: string) => {
+  const handleAbortRequest = useCallback(async () => {
+    const cancelled = await window.api.snmp.cancel()
+    if (cancelled) {
+      setStatusMessage('Abort requested...')
+    } else {
+      message.info('No SNMP request is running')
+    }
+  }, [message, setStatusMessage])
+
+  const handleVersionChange = (version: string): void => {
     setConfig({ version: version as SnmpConfig['version'] })
   }
 
@@ -66,52 +78,26 @@ export function Toolbar(): React.ReactElement {
     const profile = { id, name: profileName, config }
     await window.api.profile.save(profile)
     const updated = await window.api.profile.load()
-    setProfiles(updated.map((p: { id: string; name: string; config: SnmpConfig }) => ({
+    setProfiles(updated.map((p: { id: string; name: string; config: Partial<SnmpConfig> }) => ({
       id: p.id,
       name: p.name,
-      config: {
-        host: p.config.host,
-        port: p.config.port,
-        version: p.config.version,
-        community: p.config.community,
-        securityLevel: p.config.securityLevel,
-        username: p.config.username,
-        authProtocol: p.config.authProtocol,
-        authPassword: p.config.authPassword,
-        privProtocol: p.config.privProtocol,
-        privPassword: p.config.privPassword,
-        timeout: p.config.timeout,
-        retries: p.config.retries
-      }
+      config: normalizeSnmpConfig(p.config)
     })))
     setShowSaveModal(false)
     setProfileName('')
   }
 
-  const handleLoadProfile = (profile: { config: SnmpConfig }) => {
-    setConfig(profile.config as SnmpConfig)
+  const handleLoadProfile = (profile: { config: Partial<SnmpConfig> }): void => {
+    setConfig(normalizeSnmpConfig(profile.config))
   }
 
   const handleDeleteProfile = async (id: string) => {
     await window.api.profile.delete(id)
     const updated = await window.api.profile.load()
-    setProfiles(updated.map((p: { id: string; name: string; config: SnmpConfig }) => ({
+    setProfiles(updated.map((p: { id: string; name: string; config: Partial<SnmpConfig> }) => ({
       id: p.id,
       name: p.name,
-      config: {
-        host: p.config.host,
-        port: p.config.port,
-        version: p.config.version,
-        community: p.config.community,
-        securityLevel: p.config.securityLevel,
-        username: p.config.username,
-        authProtocol: p.config.authProtocol,
-        authPassword: p.config.authPassword,
-        privProtocol: p.config.privProtocol,
-        privPassword: p.config.privPassword,
-        timeout: p.config.timeout,
-        retries: p.config.retries
-      }
+      config: normalizeSnmpConfig(p.config)
     })))
   }
 
@@ -135,191 +121,252 @@ export function Toolbar(): React.ReactElement {
         <GlobalOutlined /> MIB Browser
       </span>
 
-      <Tooltip title="Saved profiles">
-        <Dropdown menu={{ items: profileMenuItems }} trigger={['click']}>
-          <Button icon={<FolderOpenOutlined />} size="small">
-            Profiles
-          </Button>
-        </Dropdown>
-      </Tooltip>
-
-      <Tooltip title="Save current config">
-        <Button
-          icon={<SaveOutlined />}
-          size="small"
-          onClick={() => setShowSaveModal(true)}
-        />
-      </Tooltip>
-
       <Input
         className="host-input"
-        placeholder="Host"
+        prefix={<LinkOutlined />}
+        placeholder="IP address"
         value={config.host}
         onChange={(e) => setConfig({ host: e.target.value })}
         size="small"
       />
 
-      <InputNumber
-        className="port-input"
-        placeholder="Port"
-        value={config.port}
-        onChange={(v) => setConfig({ port: v ?? 161 })}
-        min={1}
-        max={65535}
-        size="small"
-      />
-
-      <Select
-        value={config.version}
-        onChange={handleVersionChange}
-        size="small"
-        style={{ width: 80 }}
-        options={[
-          { label: 'v1', value: 'v1' },
-          { label: 'v2c', value: 'v2c' },
-          { label: 'v3', value: 'v3' }
-        ]}
-      />
-
-      {config.version !== 'v3' ? (
-        <Input
-          className="community-input"
-          placeholder="Community"
-          value={config.community}
-          onChange={(e) => setConfig({ community: e.target.value })}
-          size="small"
-        />
-      ) : (
+      <Tooltip title="Device connection settings">
         <Button
           icon={<SettingOutlined />}
           size="small"
-          onClick={() => setShowV3Config(!showV3Config)}
-        >
-          v3 Config
-        </Button>
-      )}
-
-      <Tooltip title="Test connection (GET sysDescr.0)">
-        <Button
-          icon={<ApiOutlined />}
-          size="small"
-          loading={isTesting}
-          onClick={handleTestConnection}
-        >
-          Test
-        </Button>
+          onClick={() => setShowConnectionSettings(true)}
+        />
       </Tooltip>
 
-      <Space size="small" style={{ marginLeft: 'auto' }}>
-        <span style={{ fontSize: 12, color: '#666' }}>Timeout:</span>
-        <InputNumber
-          value={config.timeout}
-          onChange={(v) => setConfig({ timeout: v ?? 5000 })}
-          min={1000}
-          max={30000}
-          step={1000}
-          size="small"
-          style={{ width: 80 }}
-          addonAfter="ms"
-        />
-        <span style={{ fontSize: 12, color: '#666' }}>Retries:</span>
-        <InputNumber
-          value={config.retries}
-          onChange={(v) => setConfig({ retries: v ?? 1 })}
-          min={0}
-          max={5}
-          size="small"
-          style={{ width: 60 }}
-        />
-      </Space>
+      {isQuerying && (
+        <Tooltip title="Abort current SNMP request">
+          <Button
+            danger
+            icon={<StopOutlined />}
+            size="small"
+            onClick={handleAbortRequest}
+          >
+            Stop
+          </Button>
+        </Tooltip>
+      )}
 
-      {/* SNMPv3 Configuration Modal */}
+      <div style={{ marginLeft: 'auto' }} />
+
       <Modal
-        title="SNMPv3 Configuration"
-        open={showV3Config}
-        onOk={() => setShowV3Config(false)}
-        onCancel={() => setShowV3Config(false)}
-        width={500}
+        title="Device Connection Settings"
+        open={showConnectionSettings}
+        onOk={() => setShowConnectionSettings(false)}
+        onCancel={() => setShowConnectionSettings(false)}
+        width={640}
+        footer={[
+          <Button key="close" onClick={() => setShowConnectionSettings(false)}>
+            Close
+          </Button>,
+          ...(isTesting
+            ? [
+                <Button
+                  key="abort-test"
+                  danger
+                  icon={<StopOutlined />}
+                  onClick={handleAbortRequest}
+                >
+                  Stop
+                </Button>
+              ]
+            : []),
+          <Button
+            key="test"
+            icon={<ApiOutlined />}
+            loading={isTesting}
+            onClick={handleTestConnection}
+          >
+            Test
+          </Button>
+        ]}
       >
-        <div className="v3-config">
-          <div className="v3-config-row">
+        <div className="connection-settings">
+          <div className="connection-settings-actions">
+            <Tooltip title="Saved profiles">
+              <Dropdown menu={{ items: profileMenuItems }} trigger={['click']}>
+                <Button icon={<FolderOpenOutlined />} size="small">
+                  Profiles
+                </Button>
+              </Dropdown>
+            </Tooltip>
+            <Tooltip title="Save current config">
+              <Button
+                icon={<SaveOutlined />}
+                size="small"
+                onClick={() => setShowSaveModal(true)}
+              >
+                Save
+              </Button>
+            </Tooltip>
+          </div>
+
+          <Divider plain>Target</Divider>
+
+          <div className="connection-settings-grid">
             <div className="query-form-item">
-              <label>Security Level</label>
+              <label>Host / IP</label>
+              <Input
+                value={config.host}
+                onChange={(e) => setConfig({ host: e.target.value })}
+              />
+            </div>
+            <div className="query-form-item">
+              <label>Port</label>
+              <InputNumber
+                value={config.port}
+                onChange={(v) => setConfig({ port: v ?? 161 })}
+                min={1}
+                max={65535}
+                style={{ width: '100%' }}
+              />
+            </div>
+            <div className="query-form-item">
+              <label>SNMP Version</label>
               <Select
-                value={config.securityLevel}
-                onChange={(v) => setConfig({ securityLevel: v as SecurityLevel })}
-                style={{ width: 200 }}
+                value={config.version}
+                onChange={handleVersionChange}
                 options={[
-                  { label: 'noAuthNoPriv', value: 'noAuthNoPriv' },
-                  { label: 'authNoPriv', value: 'authNoPriv' },
-                  { label: 'authPriv', value: 'authPriv' }
+                  { label: 'v1', value: 'v1' },
+                  { label: 'v2c', value: 'v2c' },
+                  { label: 'v3', value: 'v3' }
                 ]}
               />
             </div>
+            {config.version !== 'v3' && (
+              <div className="query-form-item">
+                <label>Community</label>
+                <Input
+                  value={config.community}
+                  onChange={(e) => setConfig({ community: e.target.value })}
+                />
+              </div>
+            )}
           </div>
 
-          <div className="v3-config-row">
-            <div className="query-form-item">
-              <label>Username</label>
-              <Input
-                value={config.username}
-                onChange={(e) => setConfig({ username: e.target.value })}
-                style={{ width: 200 }}
-              />
-            </div>
-          </div>
-
-          {config.securityLevel !== 'noAuthNoPriv' && (
+          {config.version === 'v3' && (
             <>
-              <div className="v3-config-row">
+              <Divider plain>SNMPv3</Divider>
+
+              <div className="connection-settings-grid">
                 <div className="query-form-item">
-                  <label>Auth Protocol</label>
+                  <label>Security Level</label>
                   <Select
-                    value={config.authProtocol}
-                    onChange={(v) => setConfig({ authProtocol: v as AuthProtocol })}
-                    style={{ width: 200 }}
+                    value={config.securityLevel}
+                    onChange={(v) => setConfig({ securityLevel: v as SecurityLevel })}
                     options={[
-                      { label: 'MD5', value: 'md5' },
-                      { label: 'SHA', value: 'sha' }
+                      { label: 'noAuthNoPriv', value: 'noAuthNoPriv' },
+                      { label: 'authNoPriv', value: 'authNoPriv' },
+                      { label: 'authPriv', value: 'authPriv' }
                     ]}
                   />
                 </div>
                 <div className="query-form-item">
-                  <label>Auth Password</label>
-                  <Input.Password
-                    value={config.authPassword}
-                    onChange={(e) => setConfig({ authPassword: e.target.value })}
-                    style={{ width: 200 }}
+                  <label>Username</label>
+                  <Input
+                    value={config.username}
+                    onChange={(e) => setConfig({ username: e.target.value })}
                   />
                 </div>
+
+                {config.securityLevel !== 'noAuthNoPriv' && (
+                  <>
+                    <div className="query-form-item">
+                      <label>Auth Protocol</label>
+                      <Select
+                        value={config.authProtocol}
+                        onChange={(v) => setConfig({ authProtocol: v as AuthProtocol })}
+                        options={[
+                          { label: 'MD5', value: 'md5' },
+                          { label: 'SHA', value: 'sha' }
+                        ]}
+                      />
+                    </div>
+                    <div className="query-form-item">
+                      <label>Auth Password</label>
+                      <Input.Password
+                        value={config.authPassword}
+                        onChange={(e) => setConfig({ authPassword: e.target.value })}
+                      />
+                    </div>
+                  </>
+                )}
+
+                {config.securityLevel === 'authPriv' && (
+                  <>
+                    <div className="query-form-item">
+                      <label>Priv Protocol</label>
+                      <Select
+                        value={config.privProtocol}
+                        onChange={(v) => setConfig({ privProtocol: v as PrivProtocol })}
+                        options={[
+                          { label: 'DES', value: 'des' },
+                          { label: 'AES', value: 'aes' }
+                        ]}
+                      />
+                    </div>
+                    <div className="query-form-item">
+                      <label>Priv Password</label>
+                      <Input.Password
+                        value={config.privPassword}
+                        onChange={(e) => setConfig({ privPassword: e.target.value })}
+                      />
+                    </div>
+                  </>
+                )}
               </div>
             </>
           )}
 
-          {config.securityLevel === 'authPriv' && (
-            <div className="v3-config-row">
-              <div className="query-form-item">
-                <label>Priv Protocol</label>
-                <Select
-                  value={config.privProtocol}
-                  onChange={(v) => setConfig({ privProtocol: v as PrivProtocol })}
-                  style={{ width: 200 }}
-                  options={[
-                    { label: 'DES', value: 'des' },
-                    { label: 'AES', value: 'aes' }
-                  ]}
-                />
-              </div>
-              <div className="query-form-item">
-                <label>Priv Password</label>
-                <Input.Password
-                  value={config.privPassword}
-                  onChange={(e) => setConfig({ privPassword: e.target.value })}
-                  style={{ width: 200 }}
-                />
-              </div>
+          <Divider plain>Request</Divider>
+
+          <div className="connection-settings-grid">
+            <div className="query-form-item">
+              <label>Timeout (ms)</label>
+              <InputNumber
+                value={config.timeout}
+                onChange={(v) => setConfig({ timeout: v ?? 5000 })}
+                min={1000}
+                max={30000}
+                step={1000}
+                style={{ width: '100%' }}
+              />
             </div>
-          )}
+            <div className="query-form-item">
+              <label>Retries</label>
+              <InputNumber
+                value={config.retries}
+                onChange={(v) => setConfig({ retries: v ?? 1 })}
+                min={0}
+                max={5}
+                style={{ width: '100%' }}
+              />
+            </div>
+            <div className="query-form-item">
+              <label>Bulk Max Repetitions</label>
+              <InputNumber
+                value={config.bulkMaxRepetitions}
+                onChange={(v) => setConfig({ bulkMaxRepetitions: v ?? 10 })}
+                min={1}
+                max={100}
+                style={{ width: '100%' }}
+              />
+            </div>
+            <div className="query-form-item">
+              <label>Bulk Non-repeaters</label>
+              <InputNumber
+                value={config.bulkNonRepeaters}
+                onChange={(v) => setConfig({ bulkNonRepeaters: v ?? 0 })}
+                min={0}
+                max={20}
+                style={{ width: '100%' }}
+              />
+            </div>
+          </div>
         </div>
       </Modal>
 

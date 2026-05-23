@@ -14,7 +14,7 @@ import {
   sortableKeyboardCoordinates,
   verticalListSortingStrategy
 } from '@dnd-kit/sortable'
-import { PlusOutlined } from '@ant-design/icons'
+import { PlusOutlined, StopOutlined } from '@ant-design/icons'
 import { useAppStore } from '../../stores/appStore'
 import type { MibTreeNodeData, ResultSession } from '../../types'
 import type { SnmpSetValue } from '../../../../main/snmp/types'
@@ -315,6 +315,15 @@ export function SetMultiNodeDialog({ initialSeed, onClose }: SetMultiNodeDialogP
     onClose
   ])
 
+  const handleAbort = useCallback(async () => {
+    const cancelled = await window.api.snmp.cancel()
+    if (cancelled) {
+      setStatusMessage('Abort requested...')
+    } else {
+      appMessage.info('No SNMP request is running')
+    }
+  }, [appMessage, setStatusMessage])
+
   return (
     <Modal
       title={
@@ -341,6 +350,18 @@ export function SetMultiNodeDialog({ initialSeed, onClose }: SetMultiNodeDialogP
       style={{ top: 80 }}
       footer={[
         <Button key="cancel" onClick={onClose} disabled={submitting}>取消</Button>,
+        ...(submitting
+          ? [
+              <Button
+                key="abort"
+                danger
+                icon={<StopOutlined />}
+                onClick={handleAbort}
+              >
+                Stop
+              </Button>
+            ]
+          : []),
         <Button
           key="ok"
           type="primary"
