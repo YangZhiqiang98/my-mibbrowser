@@ -73,11 +73,13 @@ addResult: (row) => { state.results.push(row) }
 
 ---
 
-## Pattern: Cross-Component Drag-Bridge via the Store
+## Pattern: Same-Renderer Drag-Bridge via the Store
 
 Some 3rd-party widgets do not expose the native `DataTransfer` payload in their drag callbacks — most notably AntD `Tree`, where `onDragStart(info)` gives a wrapped `info.node` but no way to attach data that the receiving `onDrop` handler can read. When a draggable item from one component (the MIB tree) needs to land in a drop zone in another (the SET / GET dialogs), the only reliable channel is a **transient field on the Zustand store**.
 
-The contract used in this project lives at `appStore.pendingDragNode`:
+This pattern only applies when producer and consumer are in the **same renderer process**. The legacy in-window GET / SET dialog components still have this shape, but production GET / SET tool windows are separate Electron `BrowserWindow` renderers and must use the IPC bridge documented below.
+
+The same-renderer contract lives at `appStore.pendingDragNode`:
 
 ```typescript
 // appStore.ts — declaration
@@ -127,8 +129,73 @@ AntD `Tree` wraps the native drag event in rc-tree's own `info` object; `info.ev
 
 ---
 
+## Pattern: Cross-Window Drag-Bridge via Main-Process IPC
+
+GET / SET now run in independent Electron tool windows, so Zustand cannot be the drag bridge: each `BrowserWindow` has its own renderer process and its own JavaScript heap. Cross-window drag append must publish the dragged node through preload IPC and store it transiently in the main process.
+
+### 1. Scope / Trigger
+
+- Trigger: any draggable MIB tree node must be droppable into a GET / SET tool window hosted by another `BrowserWindow`.
+- Producer: `src/renderer/src/components/MibTreePanel.tsx`.
+- Bridge: `src/main/toolWindows.ts`.
+- Consumer: the unified GET / SET tool window content (`SetToolWindowContent`).
+
+### 2. Signatures
+
+```typescript
+window.api.snmpTool.setDragNode(node: ToolWindowMibNode | null): Promise<void>
+window.api.snmpTool.consumeDragNode(): Promise<ToolWindowMibNode | null>
+```
+
+### 3. Contracts
+
+- `setDragNode(node)` stores the current dragged `MibTreeNodeData`-compatible payload in the main process.
+- `setDragNode(null)` clears the pending drag payload.
+- `consumeDragNode()` returns the pending node once and clears it immediately.
+- The payload type is defined in `src/shared/toolWindowTypes.ts` as `ToolWindowMibNode`; do not hand-roll a second node shape in renderer code.
+
+### 4. Validation & Error Matrix
+
+| Condition | Required behavior |
+|---|---|
+| Drag starts on a valid tree node | Publish that node via `setDragNode(node)` |
+| Drop lands in a tool window | Call `consumeDragNode()` and append only if a node is returned |
+| Returned node has no OID | Show a warning and do not append |
+| Drag ends outside any tool window | Clear the pending payload |
+| `dragend` races ahead of cross-window `drop` | Delay clear briefly so the target window can consume first |
+
+### 5. Good/Base/Bad Cases
+
+- Good: user drags from the main MIB tree into an already-open GET tool window; the node is appended exactly once and the pending payload is cleared.
+- Base: user starts a drag and drops outside any tool window; the delayed `dragend` cleanup clears the pending payload.
+- Bad: consumer reads Zustand `pendingDragNode` from a tool window; it will always be isolated from the main renderer and cannot see the source node.
+
+### 6. Tests Required
+
+- Typecheck must cover `src/shared/toolWindowTypes.ts`, preload API declarations, and both renderer consumers.
+- Manual/E2E smoke should verify cross-window drag append for GET and SET because native cross-window drag behavior is Electron/OS-dependent.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```typescript
+const pendingDragNode = useAppStore((s) => s.pendingDragNode)
+if (pendingDragNode) append(pendingDragNode)
+```
+
+#### Correct
+
+```typescript
+const node = await window.api.snmpTool.consumeDragNode()
+if (node?.oid) append(node)
+```
+
+---
+
 ## Common Mistakes
 
 - Do not duplicate IPC data in both store and component state.
 - Do not store derived data — compute it in selectors or `useMemo`.
-- Do not use the store for transient UI state (hover, focus) — **with one documented exception**: the cross-component drag-bridge above. That exception exists because 3rd-party drag widgets don't expose the native payload; pure UI state with no such constraint must not creep into the store.
+- Do not use the store for transient UI state (hover, focus) — **with one documented exception**: the same-renderer drag bridge above. That exception exists because 3rd-party drag widgets don't expose the native payload; pure UI state with no such constraint must not creep into the store.
+- Do not use Zustand as a cross-window bridge. Independent Electron `BrowserWindow` renderers need preload/main-process IPC.
