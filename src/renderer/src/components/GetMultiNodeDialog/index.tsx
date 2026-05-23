@@ -1,69 +1,38 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { Modal, App, Empty, Space, Button, Tag } from 'antd'
-import { PlusOutlined } from '@ant-design/icons'
+import { SendOutlined } from '@ant-design/icons'
 import { useAppStore } from '../../stores/appStore'
 import type { MibTreeNodeData, ResultSession } from '../../types'
-import type { SnmpSetValue } from '../../../../main/snmp/types'
 import { buildResultSession } from '../../utils/resultColumns'
-import { useSetRows } from './useSetRows'
-import { SetRow } from './SetRow'
-import {
-  buildFullOid,
-  stripBaseOid,
-  validateRow,
-  isDuplicate
-} from './rowUtils'
-import type { SetRowError } from './types'
-import type { SetRowPatch, SetSeed } from './types'
+import { buildFullOid, stripBaseOid } from '../SetMultiNodeDialog/rowUtils'
+import { useGetRows } from './useGetRows'
+import { GetRow } from './GetRow'
+import { validateGetRow, isDuplicate } from './rowUtils'
+import type { GetRowError } from './types'
 
-/**
- * Lift a varbind's `value` (string | number | Buffer-shaped | null) into a
- * display string suitable for the read-only "current value" cell. Mirrors
- * the IPC-Buffer handling already in resultColumns.formatVarbindValue —
- * we don't import that one because it isn't exported.
- */
-function formatCurrentValue(value: unknown): string {
-  if (value === null || value === undefined) return ''
-  if (typeof value === 'object') {
-    const obj = value as Record<string, unknown>
-    if (obj.type === 'Buffer' && Array.isArray(obj.data)) {
-      try {
-        return String.fromCharCode(...(obj.data as number[]))
-      } catch {
-        return JSON.stringify(obj.data)
-      }
-    }
-    try {
-      return JSON.stringify(value)
-    } catch {
-      return String(value)
-    }
-  }
-  return String(value)
-}
-
-interface SetMultiNodeDialogProps {
+interface GetMultiNodeDialogProps {
   /**
-   * When non-null, dialog is open and the first row is seeded from this.
-   * `instance` and `targetValue` are optional pre-fills (used by the GET
-   * dialog's "转为 SET" handoff). When omitted the row defaults to
-   * instance='0' / targetValue=''.
+   * Non-null = open dialog with this node as the first row. Right-click GET
+   * passes the raw MibTreeNodeData (not a seed object) because GET has no
+   * instance/targetValue pre-fill to carry across — the user picks instance
+   * inside the dialog.
    */
-  initialSeed: SetSeed | null
+  initialNode: MibTreeNodeData | null
   onClose: () => void
 }
 
 /**
- * Multi-node SET dialog. Replaces the old single-node SET modal in
- * MibTreePanel. Lifecycle:
+ * Multi-node GET dialog. Replaces the earlier single-node GET modal.
+ * Lifecycle:
  *  - `initialNode` flips from null -> node: open dialog, seed first row.
- *  - User can drag additional tree nodes into the dialog body (drop zone
- *    reads `pendingDragNode` from the app store).
- *  - Per-row: edit Instance / type / target value; click buttons to walk
- *    instances or GET the current value.
- *  - "执行 SET" composes a single multi-varbind SNMP SET request.
+ *  - User can drag additional tree nodes into the drop zone to append rows.
+ *  - Per-row: edit Instance, run "获取实例" (walk for suffix options),
+ *    reorder, or delete.
+ *  - "执行 GET" composes a single multi-OID `snmp.get` and writes the result
+ *    to the main result panel. The dialog stays open afterwards so the user
+ *    can adjust instance / add or remove rows and fire again (PRD R15).
  */
-export function SetMultiNodeDialog({ initialSeed, onClose }: SetMultiNodeDialogProps): React.ReactElement {
+export function GetMultiNodeDialog({ initialNode, onClose }: GetMultiNodeDialogProps): React.ReactElement {
   const { message: appMessage } = App.useApp()
   const snmpConfig = useAppStore((s) => s.snmpConfig)
   const mibTree = useAppStore((s) => s.mibTree)
@@ -71,51 +40,49 @@ export function SetMultiNodeDialog({ initialSeed, onClose }: SetMultiNodeDialogP
   const setConnectionStatus = useAppStore((s) => s.setConnectionStatus)
   const setStatusMessage = useAppStore((s) => s.setStatusMessage)
   const setIsQuerying = useAppStore((s) => s.setIsQuerying)
+  // antd Tree's draggable callback does not expose native DataTransfer
+  // (rc-tree wraps it), so the MIB tree routes the dragged node through
+  // the app store and we read it back here. Same bridge SetMultiNodeDialog
+  // uses — see MibTreePanel.handleTreeDragStart for the producer side.
   const pendingDragNode = useAppStore((s) => s.pendingDragNode)
   const setPendingDragNode = useAppStore((s) => s.setPendingDragNode)
 
-  const { rows, append, remove, patch, move, reset } = useSetRows()
+  const { rows, append, remove, patch, move, reset } = useGetRows()
   const [isDragOver, setIsDragOver] = useState(false)
   const [instanceFetchingId, setInstanceFetchingId] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
-  const open = initialSeed !== null
+  const open = initialNode !== null
 
-  // Seed the first row when the dialog opens. Clear rows when it closes
-  // so re-opening starts fresh (matches the old modal's destroyOnClose).
-  // Depends only on initialSeed — reset/append/patch are stable refs.
+  // Seed the first row when the dialog opens. Clear rows when it closes so
+  // re-opening starts fresh (matches the old modal's destroyOnClose).
+  // Depends only on initialNode — reset/append are stable refs.
   useEffect(() => {
-    if (initialSeed) {
+    if (initialNode) {
       reset()
-      const row = append(initialSeed.node)
-      const overrides: SetRowPatch = {}
-      if (initialSeed.instance !== undefined) overrides.instance = initialSeed.instance
-      if (initialSeed.targetValue !== undefined) overrides.targetValue = initialSeed.targetValue
-      if (Object.keys(overrides).length > 0) {
-        patch(row.rowId, overrides)
-      }
+      append(initialNode)
     } else {
       reset()
     }
-  }, [initialSeed, reset, append, patch])
+  }, [initialNode, reset, append])
 
-  // If the user deletes the very last row, the dialog has nothing to act
-  // on. Close so they're not stuck staring at an empty modal.
+  // If the user deletes the very last row the dialog has nothing to act on.
+  // Close so they're not stuck staring at an empty modal.
   useEffect(() => {
-    if (open && rows.length === 0 && initialSeed !== null) {
+    if (open && rows.length === 0 && initialNode !== null) {
       // initial seed not yet applied — bail out
       return
     }
     if (open && rows.length === 0) {
       onClose()
     }
-  }, [rows.length, open, initialSeed, onClose])
+  }, [rows.length, open, initialNode, onClose])
 
   // Per-row first-error map for inline error display.
-  const errorsByRow = useMemo<Record<string, SetRowError>>(() => {
-    const map: Record<string, SetRowError> = {}
+  const errorsByRow = useMemo<Record<string, GetRowError>>(() => {
+    const map: Record<string, GetRowError> = {}
     for (const r of rows) {
-      const err = validateRow(r)
+      const err = validateGetRow(r)
       if (err) map[r.rowId] = err
     }
     return map
@@ -177,46 +144,6 @@ export function SetMultiNodeDialog({ initialSeed, onClose }: SetMultiNodeDialogP
     }
   }, [rows, snmpConfig, patch, appMessage])
 
-  /**
-   * GET the current value for one row. Two opt-ins via `options`:
-   *  - `instanceOverride`: use a freshly-picked instance suffix instead of
-   *    waiting for state to settle.
-   *  - `applyToTarget`: also overwrite `targetValue` with the returned
-   *    text. Used by the "fetch current → fill target" buttons so the user
-   *    has a one-click "edit from current" flow.
-   */
-  const fetchCurrentValue = useCallback(async (
-    rowId: string,
-    options: { instanceOverride?: string; applyToTarget?: boolean } = {}
-  ) => {
-    const row = rows.find((r) => r.rowId === rowId)
-    if (!row) return
-    const effectiveInstance = options.instanceOverride ?? row.instance
-    const fullOid = buildFullOid(row.node.oid, effectiveInstance)
-    patch(rowId, { currentValue: { state: 'loading' } })
-    try {
-      const result = await window.api.snmp.get(snmpConfig, [fullOid])
-      if (!result.success) {
-        patch(rowId, { currentValue: { state: 'err', error: result.error || 'unknown' } })
-        appMessage.error(`GET 失败：${result.error}`)
-        return
-      }
-      const vb = result.varbinds?.[0]
-      if (!vb) {
-        patch(rowId, { currentValue: { state: 'err', error: 'empty varbind' } })
-        return
-      }
-      const text = formatCurrentValue(vb.value)
-      const next: SetRowPatch = { currentValue: { state: 'ok', text } }
-      if (options.applyToTarget) next.targetValue = text
-      patch(rowId, next)
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      patch(rowId, { currentValue: { state: 'err', error: msg } })
-      appMessage.error(`请求失败：${msg}`)
-    }
-  }, [rows, snmpConfig, patch, appMessage])
-
   // ── submit ────────────────────────────────────────────────────────────
   const handleSubmit = useCallback(async () => {
     if (rows.length === 0) return
@@ -225,29 +152,29 @@ export function SetMultiNodeDialog({ initialSeed, onClose }: SetMultiNodeDialogP
       appMessage.warning(`第 ${rows.findIndex((r) => r.rowId === firstErr.rowId) + 1} 行：${firstErr.message}`)
       return
     }
-    const values: SnmpSetValue[] = rows.map((r) => ({
-      oid: buildFullOid(r.node.oid, r.instance),
-      value: r.targetValue,
-      type: r.type
-    }))
+    const oids = rows.map((r) => buildFullOid(r.node.oid, r.instance))
 
     setSubmitting(true)
     setIsQuerying(true)
     setResult(null)
     setConnectionStatus('connecting')
-    setStatusMessage(`Executing SET on ${values.length} varbind(s)...`)
+    setStatusMessage(`Executing GET on ${oids.length} OID(s)...`)
     try {
-      const result = await window.api.snmp.set(snmpConfig, values)
+      const result = await window.api.snmp.get(snmpConfig, oids)
       if (result.success) {
         setConnectionStatus('connected')
-        const session: ResultSession = buildResultSession('SET', values[0].oid, result, mibTree)
+        // First OID is the "primary" — buildResultSession uses it for the
+        // session title only; all varbinds in the response are still rendered.
+        const session: ResultSession = buildResultSession('GET', oids[0], result, mibTree)
         setResult(session)
-        const baseMsg = `SET: ${session.rows.length} result(s), ${result.responseTime}ms`
+        const baseMsg = `GET: ${session.rows.length} result(s), ${result.responseTime}ms`
         setStatusMessage(
           session.rows.length === 0 ? `${baseMsg} — 本次操作结果为空` : baseMsg
         )
-        appMessage.success(`SET succeeded (${values.length} varbind${values.length > 1 ? 's' : ''})`)
-        onClose()
+        appMessage.success(`GET succeeded (${oids.length} OID${oids.length > 1 ? 's' : ''})`)
+        // Intentionally NOT calling onClose() — keep the dialog open so the
+        // user can tweak instance / add or remove rows and fire again
+        // without re-opening (PRD D7 / R15).
       } else {
         setConnectionStatus('error')
         appMessage.error(`SNMP error: ${result.error}`)
@@ -271,43 +198,39 @@ export function SetMultiNodeDialog({ initialSeed, onClose }: SetMultiNodeDialogP
     setConnectionStatus,
     setStatusMessage,
     setIsQuerying,
-    appMessage,
-    onClose
+    appMessage
   ])
 
   return (
     <Modal
       title={
         <Space>
-          <span>SET 多节点</span>
+          <span>GET 多节点</span>
           <Tag color="blue">共 {rows.length} 行</Tag>
         </Space>
       }
       open={open}
       onCancel={onClose}
-      width={960}
+      width={760}
       destroyOnClose
-      // No mask — the dialog needs to coexist with the MIB tree so the user
-      // can keep dragging more nodes in while it's open. With the default
-      // mask the tree underneath becomes non-interactive.
+      // No mask — coexist with the MIB tree underneath so the user can keep
+      // dragging more nodes into the drop zone while the dialog is open.
+      // Same pattern as SetMultiNodeDialog.
       mask={false}
       maskClosable={false}
-      // Confine fixed positioning + allow page-level interactions when the
-      // dialog is open. Without this antd v6 still wraps a transparent
-      // wrapper that can swallow pointer events outside the panel.
-      wrapClassName="set-multi-node-dialog-wrap"
+      wrapClassName="get-multi-node-dialog-wrap"
       style={{ top: 80 }}
       footer={[
         <Button key="cancel" onClick={onClose} disabled={submitting}>取消</Button>,
         <Button
           key="ok"
           type="primary"
-          icon={<PlusOutlined />}
+          icon={<SendOutlined />}
           onClick={handleSubmit}
           loading={submitting}
           disabled={rows.length === 0}
         >
-          执行 SET ({rows.length})
+          执行 GET ({rows.length})
         </Button>
       ]}
     >
@@ -342,14 +265,12 @@ export function SetMultiNodeDialog({ initialSeed, onClose }: SetMultiNodeDialogP
                 <th style={{ padding: '6px 4px', width: 36, fontSize: 12, color: '#666' }}>#</th>
                 <th style={{ padding: '6px 4px', textAlign: 'left', fontSize: 12, color: '#666' }}>节点</th>
                 <th style={{ padding: '6px 4px', textAlign: 'left', fontSize: 12, color: '#666' }}>Instance</th>
-                <th style={{ padding: '6px 4px', textAlign: 'left', fontSize: 12, color: '#666' }}>类型</th>
-                <th style={{ padding: '6px 4px', textAlign: 'left', fontSize: 12, color: '#666' }}>目标值</th>
                 <th style={{ padding: '6px 4px', textAlign: 'right', fontSize: 12, color: '#666' }}>操作</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((row, idx) => (
-                <SetRow
+                <GetRow
                   key={row.rowId}
                   index={idx}
                   total={rows.length}
@@ -360,7 +281,6 @@ export function SetMultiNodeDialog({ initialSeed, onClose }: SetMultiNodeDialogP
                   onRemove={() => remove(row.rowId)}
                   onMove={(dir) => move(row.rowId, dir)}
                   onFetchInstances={() => fetchInstances(row.rowId)}
-                  onFetchCurrentValue={(opts) => fetchCurrentValue(row.rowId, opts)}
                   instanceFetching={instanceFetchingId === row.rowId}
                 />
               ))}

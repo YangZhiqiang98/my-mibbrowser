@@ -40,8 +40,9 @@ interface AppState {
   /**
    * Transient: the MibTreeNodeData picked up by an in-flight drag from the
    * MIB tree. Set on Tree onDragStart, cleared on drop / dragend.
-   * SetMultiNodeDialog's drop zone reads this because antd Tree's
-   * `draggable` callback does not expose the native DataTransfer payload.
+   * SetMultiNodeDialog and GetMultiNodeDialog drop zones both read this
+   * because antd Tree's `draggable` callback does not expose the native
+   * DataTransfer payload.
    */
   pendingDragNode: MibTreeNodeData | null
 

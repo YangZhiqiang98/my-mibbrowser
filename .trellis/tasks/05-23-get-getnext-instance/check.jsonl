@@ -1,0 +1,6 @@
+{"file": ".trellis/tasks/05-23-get-getnext-instance/prd.md", "reason": "Authoritative AC list to verify against"}
+{"file": ".trellis/spec/frontend/mib-tree-snmp-ops.md", "reason": "Verify the right-click GET dispatch still routes through MibTreeNodeData → buildFullOid → window.api.snmp.get; verify GETNEXT removal does not break the resolveBulkOids / WALK / BULKWALK paths"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "Verify new GetSingleNodeDialog follows component structure / antd v6 message via App.useApp() / props shape"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Frontend quality bar (typecheck / lint / no unused imports / Modal accessibility)"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "Verify SetSeed and the SetMultiNodeDialog props transition keep explicit types, no any leaks"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "Verify QueryPanel fallback effect (queryOperation 'GETNEXT'→'GET') uses Zustand selectors correctly and does not introduce render loops"}

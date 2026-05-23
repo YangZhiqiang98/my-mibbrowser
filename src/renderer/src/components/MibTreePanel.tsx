@@ -16,7 +16,6 @@ import {
   SendOutlined,
   ScissorOutlined,
   NodeIndexOutlined,
-  SwapOutlined,
   ReloadOutlined,
   DatabaseOutlined,
   EditOutlined
@@ -27,6 +26,8 @@ import type { MibTreeNodeData } from '../types'
 import { buildTreeFromNodes } from '../utils/mibTreeUtils'
 import { buildResultSession } from '../utils/resultColumns'
 import { SetMultiNodeDialog } from './SetMultiNodeDialog'
+import type { SetSeed } from './SetMultiNodeDialog/types'
+import { GetMultiNodeDialog } from './GetMultiNodeDialog'
 
 const ACCESS_COLOR_MAP: Record<string, string> = {
   'read-only': 'blue',
@@ -279,10 +280,16 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
 
   const [contextMenuNode, setContextMenuNode] = useState<MibTreeNodeData | null>(null)
 
-  // Multi-node SET dialog. `setDialogSeed` is the node from the right-click
-  // (or programmatic open) that becomes the dialog's first row. Closing the
-  // dialog clears it so the next right-click reopens fresh.
-  const [setDialogSeed, setSetDialogSeed] = useState<MibTreeNodeData | null>(null)
+  // Multi-node SET dialog. `setDialogSeed` carries the first row's seed
+  // (node + optional instance/targetValue overrides). Right-click SET passes
+  // just the node; the GET dialog's "转为 SET" handoff passes the full seed.
+  const [setDialogSeed, setSetDialogSeed] = useState<SetSeed | null>(null)
+
+  // Multi-node GET dialog. Same seed pattern as SET: non-null = open.
+  // Closing clears the seed so the next right-click reopens fresh. Stays
+  // as `MibTreeNodeData` (not a SetSeed-style object) because GET has no
+  // instance/targetValue overrides to carry across.
+  const [getDialogSeed, setGetDialogSeed] = useState<MibTreeNodeData | null>(null)
 
   const collectSubtreeKeys = useCallback((node: MibTreeNodeData): string[] => {
     const keys = [node.id]
@@ -391,7 +398,21 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
       appMessage.warning('No OID available for this node')
       return
     }
-    setSetDialogSeed(node)
+    setSetDialogSeed({ node })
+  }, [appMessage])
+
+  /**
+   * Open the multi-node GET dialog. Right-click GET goes through this
+   * instead of firing `executeSnmpOperation('GET', ...)` directly, so the
+   * user can pick an instance suffix (and optionally drag in more nodes)
+   * before the request is sent.
+   */
+  const openGetDialog = useCallback((node: MibTreeNodeData) => {
+    if (!node.oid) {
+      appMessage.warning('No OID available for this node')
+      return
+    }
+    setGetDialogSeed(node)
   }, [appMessage])
 
   const contextMenuItems: MenuProps['items'] = useMemo(() => {
@@ -410,14 +431,7 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
             icon: <SendOutlined />,
             label: 'GET',
             disabled: !hasOid,
-            onClick: () => executeSnmpOperation('GET', contextMenuNode)
-          },
-          {
-            key: 'snmp-getnext',
-            icon: <SwapOutlined />,
-            label: 'GETNEXT',
-            disabled: !hasOid,
-            onClick: () => executeSnmpOperation('GETNEXT', contextMenuNode)
+            onClick: () => openGetDialog(contextMenuNode)
           },
           {
             key: 'snmp-getbulk',
@@ -501,7 +515,7 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
         }
       }
     ]
-  }, [contextMenuNode, collectSubtreeKeys, setQueryOid, setSelectedNode, executeSnmpOperation, openSetDialog])
+  }, [contextMenuNode, collectSubtreeKeys, setQueryOid, setSelectedNode, executeSnmpOperation, openGetDialog, openSetDialog])
 
   // Drag a tree node into a SET dialog drop zone. antd Tree's draggable
   // callback does not expose native DataTransfer (it's wrapped by rc-tree),
@@ -730,8 +744,17 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
       {/* Multi-node SET dialog. Replaces the legacy single-OID Modal.
           Closing clears the seed so the next right-click reopens fresh. */}
       <SetMultiNodeDialog
-        initialNode={setDialogSeed}
+        initialSeed={setDialogSeed}
         onClose={() => setSetDialogSeed(null)}
+      />
+
+      {/* Multi-node GET dialog. Lets the user pick an instance suffix
+          (manually or via WALK) and optionally drag in more nodes before
+          firing the GET. Stays open after dispatch so the user can adjust
+          and re-fire. */}
+      <GetMultiNodeDialog
+        initialNode={getDialogSeed}
+        onClose={() => setGetDialogSeed(null)}
       />
     </div>
   )

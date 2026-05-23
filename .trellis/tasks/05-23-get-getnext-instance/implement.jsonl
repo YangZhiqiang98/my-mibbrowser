@@ -1,0 +1,6 @@
+{"file": ".trellis/tasks/05-23-get-getnext-instance/prd.md", "reason": "Authoritative requirements / decisions / AC / technical approach for this task"}
+{"file": ".trellis/spec/frontend/mib-tree-snmp-ops.md", "reason": "Core contract for right-click SNMP operations on MibTreeNodeData — directly governs the GET dialog dispatch and GETNEXT menu removal"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "New GetSingleNodeDialog component must follow project component structure / antd v6 / App.useApp() conventions; also governs extending SetMultiNodeDialog props"}
+{"file": ".trellis/spec/frontend/directory-structure.md", "reason": "Where to place GetSingleNodeDialog/ — confirms components/ layout and naming"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "Type discipline for new SetSeed shape, GetSingleNodeDialogProps, and the SetMultiNodeDialog props extension (initialNode -> initialSeed)"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "appStore conventions — needed for the QueryPanel fallback effect that downgrades historical queryOperation='GETNEXT' to 'GET'"}

@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react'
+import React, { useState, useCallback, useEffect } from 'react'
 import { Input, Select, Button, InputNumber, Space, message, Tooltip } from 'antd'
 import {
   SendOutlined,
@@ -33,6 +33,16 @@ export function QueryPanel(): React.ReactElement {
   const isSetOperation = queryOperation === 'SET'
   const isBulkOperation = queryOperation === 'GETBULK' || queryOperation === 'BULK_WALK'
 
+  // GETNEXT was removed from the Operation dropdown — if a prior session
+  // persisted the value (or hot-reload caught us with 'GETNEXT' in flight),
+  // fall back to 'GET' so the Select doesn't render a value with no matching
+  // option. Re-runs are no-ops once the value is anything other than 'GETNEXT'.
+  useEffect(() => {
+    if (queryOperation === 'GETNEXT') {
+      setQueryOperation('GET')
+    }
+  }, [queryOperation, setQueryOperation])
+
   const handleSend = useCallback(async () => {
     if (!queryOid.trim()) {
       message.warning('Please enter an OID')
@@ -61,9 +71,6 @@ export function QueryPanel(): React.ReactElement {
       switch (queryOperation) {
         case 'GET':
           result = await window.api.snmp.get(config, oids)
-          break
-        case 'GETNEXT':
-          result = await window.api.snmp.getNext(config, oids)
           break
         case 'GETBULK':
           result = await window.api.snmp.getBulk(config, oids, maxRepetitions)
@@ -177,7 +184,6 @@ export function QueryPanel(): React.ReactElement {
             style={{ width: 120 }}
             options={[
               { label: 'GET', value: 'GET' },
-              { label: 'GETNEXT', value: 'GETNEXT' },
               { label: 'GETBULK', value: 'GETBULK' },
               { label: 'SET', value: 'SET' },
               { label: 'WALK', value: 'WALK' },

@@ -395,3 +395,28 @@ Search改为Enter触发; snmpWalk/BulkWalk区分endOfMibView与noSuchInstance; G
 - **目标值列按钮 = 获取并填入**：`onFetchCurrentValue` 加 `applyToTarget` opt，GET 成功后直接写 `targetValue`；按钮 loading/error 沿用原状态机。错误时 Input 标 error + Tooltip 给原因。
 - **Instance Select onChange 改为 applyToTarget: true**：选 instance 后直接把当前值塞进目标值（用户最常见路径就是"基于当前值改"）。
 - typecheck/lint/build 全绿。
+
+---
+
+## 2026-05-23 任务：05-23-get-getnext-instance
+
+### Brainstorm 关键决策
+- D1 GETNEXT 两处 UI 入口都清（右键菜单 + QueryPanel 下拉），底层 IPC 保留供 WALK 调用
+- D2 右键 GET 走轻量单节点 Modal（不做 multi-node）
+- D3 Modal 内 instance Input + walk 按钮，对齐 SET 体验
+- D4 发请求后 Modal 保持打开，可改 instance 再次发起
+- D5 加 "转为 SET" 按钮，预填 instance + targetValue（成功 GET 后启用）
+- Abort 功能单独开任务（跨主进程 / IPC / preload / 前端四层改造，主题与本任务不同）
+
+### 实施切分
+- **PR1 GETNEXT 清理**：MibTreePanel 删 SwapOutlined import + GETNEXT 菜单项；QueryPanel 删下拉选项 + switch case + 加 fallback effect 把历史 `queryOperation==='GETNEXT'` 自动落到 `'GET'`。executeSnmpOperation 的类型联合和 switch 中的 `case 'GETNEXT'` 死代码故意保留（PRD R3 显式允许）。
+- **PR2 GetSingleNodeDialog**：新建 `src/renderer/src/components/GetSingleNodeDialog/index.tsx`。复用 SetMultiNodeDialog/rowUtils 的 `buildFullOid`/`stripBaseOid` 和本地 `formatVarbindValueText`（不 export 上层 utils，避免本任务跨范围 refactor）。MibTreePanel 右键 GET 改为 `openGetDialog(node)`；CSS 加 `.get-single-node-dialog-wrap` 同 SET 的 pointer-events 透传 trick，背景树仍可右键。
+- **PR3 转为 SET 联动**：types.ts 新增 `SetSeed { node, instance?, targetValue? }`。SetMultiNodeDialog props 从 `initialNode: MibTreeNodeData` 改为 `initialSeed: SetSeed | null`，useEffect 在 append 后按 seed 字段 patch 第一行（解 React 状态批处理顺序：同一 effect 内 append 后立即 patch 走的是包含新行的 prev）。GetSingleNodeDialog 加 `onConvertToSet: (seed) => void`、footer 加 "转为 SET" 按钮，仅 lastGet 非空（成功 GET 过）时启用；任何 instance 修改都清 lastGet 防止陈旧值漏出。MibTreePanel 新增 `handleConvertToSet`：关 GET dialog → 开 SET dialog 带 seed。
+
+### 验证
+- typecheck/lint/build 全绿
+- 手测留到连真实 SNMP agent 时按 PRD AC 清单逐项过（scalar `.0` 默认 GET、column walk 选 instance、转 SET 预填、Modal 保持打开重发等）
+
+### 待后续
+- abort 任务（独立开 `task.py create`）
+- 本次产生的 dead `case 'GETNEXT'` 后续若清理，连带删 `executeSnmpOperation` 类型联合中的 GETNEXT —— 跨改动较广，单独 refactor PR

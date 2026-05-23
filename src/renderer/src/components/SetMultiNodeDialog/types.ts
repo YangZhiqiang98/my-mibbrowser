@@ -55,3 +55,17 @@ export interface SetRowError {
 export type SetRowPatch = Partial<
   Pick<SetRowDraft, 'instance' | 'instanceOptions' | 'type' | 'targetValue' | 'currentValue'>
 >
+
+/**
+ * Seed for opening the SetMultiNodeDialog. Right-click SET passes just a
+ * node (defaults to instance='0' and empty target). The GET dialog's
+ * "转为 SET" handoff passes a fully-specified seed so the first row arrives
+ * with instance + targetValue pre-filled.
+ */
+export interface SetSeed {
+  node: MibTreeNodeData
+  /** Optional override for the first row's instance suffix. Defaults to '0'. */
+  instance?: string
+  /** Optional override for the first row's target value. Defaults to ''. */
+  targetValue?: string
+}

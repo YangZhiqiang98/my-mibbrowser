@@ -44,7 +44,7 @@ Single-OID GETBULK is still correct on a `column` or `scalar`, because there is 
 
 ## Constraint: SNMP Operation Results Go Through a Single Write Path
 
-Every renderer-side entry point that fires an SNMP request must funnel its outcome through the same sequence and through `buildResultSession` + `appStore.setResult`. The result panel is overwrite-style — each new operation replaces the previous session — and there are multiple trigger sites (`QueryPanel.handleSend`, `MibTreePanel.executeSnmpOperation`, `MibTreePanel.handleSetConfirm`, and any future toolbar / keyboard / drag affordance). If each site rolls its own `setStatus` + ad-hoc varbind formatting, the panel desynchronizes: some paths leave stale rows visible during the next query, others format types inconsistently, and error states diverge.
+Every renderer-side entry point that fires an SNMP request must funnel its outcome through the same sequence and through `buildResultSession` + `appStore.setResult`. The result panel is overwrite-style — each new operation replaces the previous session — and there are multiple trigger sites (`QueryPanel.handleSend`, `MibTreePanel.executeSnmpOperation`, `SetMultiNodeDialog.handleSubmit`, `GetMultiNodeDialog.handleSubmit`, and any future toolbar / keyboard / drag affordance). If each site rolls its own `setStatus` + ad-hoc varbind formatting, the panel desynchronizes: some paths leave stale rows visible during the next query, others format types inconsistently, and error states diverge.
 
 ### Required Sequence
 
@@ -96,10 +96,37 @@ UI must therefore not pre-filter operations based on `node.access`. The only all
 
 ### How to Apply
 
-- Right-click menu items in `MibTreePanel.tsx` (`contextMenuItems`) set `disabled` based on `!hasOid` only. Do not add `node.access === 'read-only'` (or any `access`-based predicate) to a `disabled` expression for GET / GETNEXT / WALK / BULK_WALK / SET.
-- The SET dialog (`setModalNode` flow → `handleSetConfirm`) is reachable from any node with an OID. Type / value validation belongs inside the modal, not in the menu gate.
+- Right-click menu items in `MibTreePanel.tsx` (`contextMenuItems`) set `disabled` based on `!hasOid` only. Do not add `node.access === 'read-only'` (or any `access`-based predicate) to a `disabled` expression for GET / GETBULK / WALK / BULK_WALK / SET.
+- The SET dialog (`SetMultiNodeDialog` opened from `openSetDialog`) and GET dialog (`GetMultiNodeDialog` opened from `openGetDialog`) are reachable from any node with an OID. Type / value / instance validation belongs inside the dialogs, not in the menu gate.
 - If a future affordance wants to *hint* at expected writability (e.g. a tooltip "MIB declares this read-only"), render it as a non-blocking annotation. The action stays enabled.
 - This rule does not override transport-level guards. Missing community string / unreachable host still blocks at `window.api.snmp.*` and surfaces through the same error path — those are not `access`-driven decisions.
+
+---
+
+## Constraint: Right-Click GET / SET Open Multi-Node Dialogs; Others Fire Directly
+
+Right-click menu actions split into two execution shapes based on whether the operation needs an **instance suffix** to be useful:
+
+| Operation | Shape | Why |
+|---|---|---|
+| GET, SET | Opens a multi-node dialog (`GetMultiNodeDialog` / `SetMultiNodeDialog`) | Both operate on a fully-qualified instance OID. A bare `node.oid` for a scalar / column returns `noSuchInstance`. The dialog lets the user pick / type the instance suffix (and optionally `WALK` to discover them) before any request is sent. |
+| GETBULK, WALK, BULK_WALK, GETNEXT (internal) | Fires directly via `executeSnmpOperation` | These take a root / subtree OID and traverse below it. `node.oid` is already the right input — no instance suffix is needed. |
+
+The instance composition rule is the same for both dialogs: `buildFullOid(node.oid, instance)` in `src/renderer/src/components/SetMultiNodeDialog/rowUtils.ts`, which normalizes dots and defaults an empty instance to `'0'` so scalar SETs / GETs work without typing.
+
+### Why
+
+- Pre-`05-23`: right-click GET fired `executeSnmpOperation('GET', node)` directly, passing `node.oid` with no instance composition. For every non-scalar (and even scalar OIDs without an implied `.0`), the device returned `noSuchInstance` and the user had to learn to type the instance into QueryPanel manually. The dialog form makes the instance picker an explicit, discoverable step.
+- Pre-`05-23`: right-click SET went through a single-OID legacy modal. Multi-node SET (atomic varbind list in one SNMP SET request) only works through `SetMultiNodeDialog`, so the menu was promoted to that dialog as a one-way switch.
+- GETBULK / WALK / BULK_WALK do not benefit from an instance picker — the user's intent is "traverse below this OID". Putting them through a dialog would just be friction.
+
+### How to Apply
+
+- `openGetDialog(node)` and `openSetDialog(node)` are the only producers of `getDialogSeed` / `setDialogSeed` state in `MibTreePanel.tsx`. Right-click menu items for GET / SET must call these instead of `executeSnmpOperation('GET' | 'SET', ...)`. The latter signature is reserved for the direct-fire operations.
+- Both dialogs use the multi-row + drag-append shape: a top drop zone that consumes the `pendingDragNode` Zustand bridge (see [state-management.md](./state-management.md) → "Cross-component drag-bridge"), per-row instance Input/Select with a `WALK` discovery button, and a single submit that dispatches one atomic multi-OID SNMP request.
+- Both dialogs are intentionally non-modal: `mask={false}` + a `pointer-events: none` wrap class so the underlying MIB tree stays interactive while the dialog is open. This is what lets the user drag additional nodes in. New similarly-shaped dialogs must follow the same pattern; do not introduce a masking modal that blocks tree interaction.
+- The legacy `MibTreePanel.handleSetConfirm` flow and the single-OID SET `Modal` have been removed. Any reintroduction of "fire GET / SET directly from the menu" requires lifting the instance-picker affordance somewhere else first (e.g., into a slash command or keyboard shortcut), not regressing the dialog.
+- GET dialog has no "convert to SET" affordance. The two flows are independent on purpose: GET retrieves, SET writes, and crossing them would require unstable invariants (instance still selected? value still valid? user's intent?) that aren't worth the UI surface. If a user wants to edit-from-current, they right-click → SET, then click the row's "fetch current → fill target" button inside SetMultiNodeDialog.
 
 ---
 
@@ -128,10 +155,13 @@ UI must therefore not pre-filter operations based on `node.access`. The only all
 
 ## Cross-References
 
-- `src/renderer/src/components/MibTreePanel.tsx` — `resolveBulkOids` helper, right-click GETBULK handler, `executeSnmpOperation`, `handleSetConfirm`, `contextMenuItems`.
-- `src/renderer/src/components/QueryPanel.tsx` — `handleSend` (third trigger site that must follow the single-write-path sequence).
+- `src/renderer/src/components/MibTreePanel.tsx` — `resolveBulkOids` helper, right-click GETBULK / WALK / BULK_WALK handler (`executeSnmpOperation`), `openGetDialog` / `openSetDialog`, `contextMenuItems`, tree drag handlers writing `pendingDragNode`.
+- `src/renderer/src/components/QueryPanel.tsx` — `handleSend` (third trigger site that must follow the single-write-path sequence); also the `GETNEXT` → `GET` fallback effect that ages out stale `queryOperation` state after the GETNEXT UI was removed.
+- `src/renderer/src/components/SetMultiNodeDialog/` — multi-node SET dialog (drop zone + per-row walk + atomic SET). `rowUtils.ts` exports `buildFullOid` / `stripBaseOid` which are reused by the GET dialog. `types.ts` exports `SetSeed` for callers that need to pre-fill the first row.
+- `src/renderer/src/components/GetMultiNodeDialog/` — multi-node GET dialog. Same five-file shape (`types.ts` / `rowUtils.ts` / `useGetRows.ts` / `GetRow.tsx` / `index.tsx`) as the SET dialog, trimmed to GET-only fields. Imports `buildFullOid` / `stripBaseOid` from the SET dialog's `rowUtils.ts`.
 - `src/renderer/src/utils/resultColumns.ts` — `resolveOidToColumn`, `buildResultSession`, `formatVarbindValue` (renderer-side). Single producer of `ResultSession`.
-- `src/renderer/src/stores/appStore.ts` — `setResult` is the only allowed writer of `currentResult`; legacy `addResult` / `addResults` / `results` are compile-only shims.
-- `src/main/snmp/client.ts` — `snmpGetBulk` accepts a multi-OID repeaters list; see also `flattenBulkVarbinds` for how the response rows are interleaved.
+- `src/renderer/src/stores/appStore.ts` — `setResult` is the only allowed writer of `currentResult`; legacy `addResult` / `addResults` / `results` are compile-only shims. `pendingDragNode` is the cross-component drag bridge consumed by both Set and Get multi-node dialogs (see [state-management.md](./state-management.md)).
+- `src/main/snmp/client.ts` — `snmpGetBulk` accepts a multi-OID repeaters list; see also `flattenBulkVarbinds` for how the response rows are interleaved. `snmpGetNext` is still exported and used internally by `snmpWalk`, even though the GETNEXT UI entry points were removed.
 - [`backend/snmp-guidelines.md`](../backend/snmp-guidelines.md) — Protocol-layer rules for OID comparison and walk termination. The segment-boundary rule used in `resolveOidToColumn` is the same rule used by `oidInSubtree` — keep them in sync.
 - [component-guidelines.md](./component-guidelines.md) — General component patterns for `MibTreePanel.tsx`, plus the AntD Dropdown menu item click constraint that the right-click menu and `Toolbar.tsx` profile menu both depend on.
+- [state-management.md](./state-management.md) — "Cross-component drag-bridge via the store" section documents why `pendingDragNode` lives in Zustand instead of the native DataTransfer.
