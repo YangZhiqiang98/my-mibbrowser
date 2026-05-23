@@ -4,6 +4,7 @@ import { SendOutlined } from '@ant-design/icons'
 import { useAppStore } from '../../stores/appStore'
 import type { MibTreeNodeData, ResultSession } from '../../types'
 import { buildResultSession } from '../../utils/resultColumns'
+import { useDraggableModal } from '../useDraggableModal'
 import { buildFullOid, stripBaseOid } from '../SetMultiNodeDialog/rowUtils'
 import { useGetRows } from './useGetRows'
 import { GetRow } from './GetRow'
@@ -53,6 +54,7 @@ export function GetMultiNodeDialog({ initialNode, onClose }: GetMultiNodeDialogP
   const [submitting, setSubmitting] = useState(false)
 
   const open = initialNode !== null
+  const draggableModal = useDraggableModal(open)
 
   // Seed the first row when the dialog opens. Clear rows when it closes so
   // re-opening starts fresh (matches the old modal's destroyOnClose).
@@ -218,7 +220,7 @@ export function GetMultiNodeDialog({ initialNode, onClose }: GetMultiNodeDialogP
   return (
     <Modal
       title={
-        <Space>
+        <Space className="non-modal-dialog-title" {...draggableModal.titleProps}>
           <span>GET 多节点</span>
           <Tag color="blue">共 {rows.length} 行</Tag>
         </Space>
@@ -233,6 +235,8 @@ export function GetMultiNodeDialog({ initialNode, onClose }: GetMultiNodeDialogP
       mask={false}
       maskClosable={false}
       wrapClassName="get-multi-node-dialog-wrap"
+      rootClassName="get-multi-node-dialog-root"
+      modalRender={draggableModal.modalRender}
       style={{ top: 80 }}
       footer={[
         <Button key="cancel" onClick={onClose} disabled={submitting}>取消</Button>,

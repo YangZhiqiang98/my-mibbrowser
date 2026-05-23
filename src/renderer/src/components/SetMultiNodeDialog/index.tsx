@@ -1,10 +1,25 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { Modal, App, Empty, Space, Button, Tag } from 'antd'
+import {
+  closestCenter,
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent
+} from '@dnd-kit/core'
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy
+} from '@dnd-kit/sortable'
 import { PlusOutlined } from '@ant-design/icons'
 import { useAppStore } from '../../stores/appStore'
 import type { MibTreeNodeData, ResultSession } from '../../types'
 import type { SnmpSetValue } from '../../../../main/snmp/types'
 import { buildResultSession } from '../../utils/resultColumns'
+import { useDraggableModal } from '../useDraggableModal'
 import { useSetRows } from './useSetRows'
 import { SetRow } from './SetRow'
 import {
@@ -74,12 +89,17 @@ export function SetMultiNodeDialog({ initialSeed, onClose }: SetMultiNodeDialogP
   const pendingDragNode = useAppStore((s) => s.pendingDragNode)
   const setPendingDragNode = useAppStore((s) => s.setPendingDragNode)
 
-  const { rows, append, remove, patch, move, reset } = useSetRows()
+  const { rows, append, remove, patch, moveTo, reset } = useSetRows()
   const [isDragOver, setIsDragOver] = useState(false)
   const [instanceFetchingId, setInstanceFetchingId] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  )
 
   const open = initialSeed !== null
+  const draggableModal = useDraggableModal(open)
 
   // Seed the first row when the dialog opens. Clear rows when it closes
   // so re-opening starts fresh (matches the old modal's destroyOnClose).
@@ -217,6 +237,12 @@ export function SetMultiNodeDialog({ initialSeed, onClose }: SetMultiNodeDialogP
     }
   }, [rows, snmpConfig, patch, appMessage])
 
+  const handleSortEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    moveTo(String(active.id), String(over.id))
+  }, [moveTo])
+
   // ── submit ────────────────────────────────────────────────────────────
   const handleSubmit = useCallback(async () => {
     if (rows.length === 0) return
@@ -292,14 +318,14 @@ export function SetMultiNodeDialog({ initialSeed, onClose }: SetMultiNodeDialogP
   return (
     <Modal
       title={
-        <Space>
+        <Space className="non-modal-dialog-title" {...draggableModal.titleProps}>
           <span>SET 多节点</span>
           <Tag color="blue">共 {rows.length} 行</Tag>
         </Space>
       }
       open={open}
       onCancel={onClose}
-      width={960}
+      width={900}
       destroyOnClose
       // No mask — the dialog needs to coexist with the MIB tree so the user
       // can keep dragging more nodes in while it's open. With the default
@@ -310,6 +336,8 @@ export function SetMultiNodeDialog({ initialSeed, onClose }: SetMultiNodeDialogP
       // dialog is open. Without this antd v6 still wraps a transparent
       // wrapper that can swallow pointer events outside the panel.
       wrapClassName="set-multi-node-dialog-wrap"
+      rootClassName="set-multi-node-dialog-root"
+      modalRender={draggableModal.modalRender}
       style={{ top: 80 }}
       footer={[
         <Button key="cancel" onClick={onClose} disabled={submitting}>取消</Button>,
@@ -350,36 +378,39 @@ export function SetMultiNodeDialog({ initialSeed, onClose }: SetMultiNodeDialogP
         <Empty description="尚无节点" />
       ) : (
         <div style={{ maxHeight: '60vh', overflow: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-            <thead>
-              <tr style={{ background: '#fafafa', borderBottom: '1px solid #f0f0f0' }}>
-                <th style={{ padding: '6px 4px', width: 36, fontSize: 12, color: '#666' }}>#</th>
-                <th style={{ padding: '6px 4px', textAlign: 'left', fontSize: 12, color: '#666' }}>节点</th>
-                <th style={{ padding: '6px 4px', textAlign: 'left', fontSize: 12, color: '#666' }}>Instance</th>
-                <th style={{ padding: '6px 4px', textAlign: 'left', fontSize: 12, color: '#666' }}>类型</th>
-                <th style={{ padding: '6px 4px', textAlign: 'left', fontSize: 12, color: '#666' }}>目标值</th>
-                <th style={{ padding: '6px 4px', textAlign: 'right', fontSize: 12, color: '#666' }}>操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row, idx) => (
-                <SetRow
-                  key={row.rowId}
-                  index={idx}
-                  total={rows.length}
-                  row={row}
-                  rowError={errorsByRow[row.rowId]}
-                  disabled={submitting}
-                  onPatch={(p) => patch(row.rowId, p)}
-                  onRemove={() => remove(row.rowId)}
-                  onMove={(dir) => move(row.rowId, dir)}
-                  onFetchInstances={() => fetchInstances(row.rowId)}
-                  onFetchCurrentValue={(opts) => fetchCurrentValue(row.rowId, opts)}
-                  instanceFetching={instanceFetchingId === row.rowId}
-                />
-              ))}
-            </tbody>
-          </table>
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleSortEnd}>
+            <SortableContext items={rows.map((row) => row.rowId)} strategy={verticalListSortingStrategy}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead>
+                  <tr style={{ background: '#fafafa', borderBottom: '1px solid #f0f0f0' }}>
+                    <th style={{ padding: '6px 4px', width: 32, fontSize: 12, color: '#666' }} />
+                    <th style={{ padding: '6px 4px', width: 36, fontSize: 12, color: '#666' }}>#</th>
+                    <th style={{ padding: '6px 4px', textAlign: 'left', fontSize: 12, color: '#666' }}>节点</th>
+                    <th style={{ padding: '6px 4px', textAlign: 'left', fontSize: 12, color: '#666' }}>Instance</th>
+                    <th style={{ padding: '6px 4px', textAlign: 'left', fontSize: 12, color: '#666' }}>类型</th>
+                    <th style={{ padding: '6px 4px', textAlign: 'left', fontSize: 12, color: '#666' }}>目标值</th>
+                    <th style={{ padding: '6px 4px', textAlign: 'right', fontSize: 12, color: '#666' }}>操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((row, idx) => (
+                    <SetRow
+                      key={row.rowId}
+                      index={idx}
+                      row={row}
+                      rowError={errorsByRow[row.rowId]}
+                      disabled={submitting}
+                      onPatch={(p) => patch(row.rowId, p)}
+                      onRemove={() => remove(row.rowId)}
+                      onFetchInstances={() => fetchInstances(row.rowId)}
+                      onFetchCurrentValue={(opts) => fetchCurrentValue(row.rowId, opts)}
+                      instanceFetching={instanceFetchingId === row.rowId}
+                    />
+                  ))}
+                </tbody>
+              </table>
+            </SortableContext>
+          </DndContext>
         </div>
       )}
     </Modal>

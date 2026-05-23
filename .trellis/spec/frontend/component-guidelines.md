@@ -78,6 +78,49 @@ export function QueryPanel({ onSubmit }: QueryPanelProps): React.ReactElement {
 
 ---
 
+## Constraint: Non-Modal AntD Dialogs Must Pierce Both Root and Wrap Layers
+
+Some workflow dialogs (`GetMultiNodeDialog`, `SetMultiNodeDialog`) intentionally stay open while the user continues interacting with the MIB tree behind them. For these dialogs, `mask={false}` is not enough. AntD v6 still renders full-screen root / wrap elements that can intercept pointer events even when no visible mask is present.
+
+### Required Pattern
+
+```tsx
+<Modal
+  mask={false}
+  maskClosable={false}
+  rootClassName="my-dialog-root"
+  wrapClassName="my-dialog-wrap"
+  modalRender={draggableModal.modalRender}
+/>
+```
+
+```css
+.my-dialog-root,
+.my-dialog-wrap {
+  pointer-events: none;
+}
+
+.my-dialog-root .ant-modal,
+.my-dialog-wrap .ant-modal {
+  pointer-events: auto;
+}
+```
+
+If the dialog should be movable, use `useDraggableModal(open)` and pass its `modalRender` to the Modal. Attach `titleProps` to the title element as a fallback, but the hook must also make the entire `.ant-modal-header` a drag region so users do not need to grab the exact title text. The hook applies movement through `modalRender`, so it does not fight AntD's own fixed positioning.
+
+### Why
+
+Applying `pointer-events: none` only to `wrapClassName` is incomplete in AntD v6: the portal root can still cover the page. The symptom is a dialog that looks non-modal (`mask={false}`) but still prevents clicking, right-clicking, or dragging nodes in the UI behind it.
+
+### How to Apply
+
+- Use this pattern only for intentionally non-modal workflow dialogs. Standard settings/profile modals should keep normal modal behavior.
+- Keep the dialog panel interactive by restoring `pointer-events: auto` on `.ant-modal`.
+- Make the whole header's drag affordance visible with a `cursor: move` class.
+- Do not add a global `.ant-modal-root { pointer-events: none }`; that would break ordinary blocking modals such as Toolbar settings/profile dialogs.
+
+---
+
 ## Constraint: AntD Dropdown Menu Item Clicks Must Use Item-Level or Dropdown-Level Handlers
 
 When wiring click handling for an Ant Design `<Dropdown menu={{ items }}>`, the click handler must be attached at **one of two places only**:

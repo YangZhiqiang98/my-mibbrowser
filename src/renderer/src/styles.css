@@ -457,23 +457,33 @@ html, body, #root {
   background: #a8a8a8;
 }
 
-/* SetMultiNodeDialog: let pointer events fall through to the MIB tree
-   underneath while the dialog is open, so the user can keep dragging more
-   nodes into the dialog's drop zone. The dialog panel itself re-enables
-   pointer events so its own controls stay interactive. */
+/* Multi-node GET / SET dialogs are intentionally non-modal: the transparent
+   AntD root + wrap must not intercept clicks, while the dialog panel itself
+   remains interactive. */
+.set-multi-node-dialog-root,
 .set-multi-node-dialog-wrap {
   pointer-events: none;
 }
+.set-multi-node-dialog-root .ant-modal,
 .set-multi-node-dialog-wrap .ant-modal {
   pointer-events: auto;
 }
 
-/* GetMultiNodeDialog: same pointer-events trick as the SET dialog so the
-   user can keep navigating / right-clicking / dragging the MIB tree (e.g.
-   to drop more nodes into the GET dialog's drop zone) while it's open. */
+.get-multi-node-dialog-root,
 .get-multi-node-dialog-wrap {
   pointer-events: none;
 }
+.get-multi-node-dialog-root .ant-modal,
 .get-multi-node-dialog-wrap .ant-modal {
   pointer-events: auto;
+}
+
+.non-modal-dialog-title {
+  cursor: move;
+  user-select: none;
+}
+
+.non-modal-dialog-drag-region {
+  cursor: move;
+  user-select: none;
 }

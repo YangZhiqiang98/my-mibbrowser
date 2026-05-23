@@ -35,10 +35,23 @@
 
 ## Testing
 
-- **No tests currently exist**. When added:
-  - Unit tests for utils (`mibTreeUtils.ts`) with Vitest.
-  - Component tests with React Testing Library for interactive panels.
-  - E2E tests with Playwright/Spectron for critical flows (load MIB, run SNMP query).
+Tests use Vitest with `jsdom` plus React Testing Library. The canonical entry point is:
+
+```bash
+npm test
+```
+
+Current scope:
+- Unit tests for pure renderer utilities, especially OID normalization / validation helpers.
+- Hook tests with React Testing Library's `renderHook` and `act` for local row-state hooks.
+- Component tests with React Testing Library for interactive panels when behavior can be tested without Electron IPC.
+- E2E tests with Playwright/Spectron for critical flows (load MIB, run SNMP query) when added.
+
+### Required Test Assertions
+
+- OID helpers must cover leading-dot normalization, empty instance defaults, and segment-boundary prefix behavior.
+- Row-state hooks must assert immutable updates: changed arrays get a new reference, untouched row objects remain stable where possible.
+- IPC-facing components should mock `window.api` at the boundary; do not import Electron directly in tests.
 
 ### Test Priority
 
@@ -65,6 +78,7 @@ Run before committing:
 
 ```bash
 npm run typecheck:web     # TypeScript check for renderer
+npm test                  # Vitest unit / hook tests
 npm run lint              # ESLint
 npm run build             # Full build verification
 ```

@@ -1,9 +1,10 @@
 import React, { useMemo } from 'react'
 import { Input, Select, Button, Tooltip, Space } from 'antd'
+import { useSortable } from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import {
   DeleteOutlined,
-  ArrowUpOutlined,
-  ArrowDownOutlined,
+  HolderOutlined,
   ImportOutlined,
   ApiOutlined
 } from '@ant-design/icons'
@@ -33,13 +34,11 @@ function cleanSyntax(syntax: string): string {
 
 interface SetRowProps {
   index: number
-  total: number
   row: SetRowDraft
   rowError?: SetRowError
   disabled: boolean
   onPatch: (patch: SetRowPatch) => void
   onRemove: () => void
-  onMove: (direction: 'up' | 'down') => void
   onFetchInstances: () => void
   /**
    * GET the current value for this row.
@@ -55,23 +54,39 @@ interface SetRowProps {
 export function SetRow(props: SetRowProps): React.ReactElement {
   const {
     index,
-    total,
     row,
     rowError,
     disabled,
     onPatch,
     onRemove,
-    onMove,
     onFetchInstances,
     onFetchCurrentValue,
     instanceFetching
   } = props
+
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging
+  } = useSortable({ id: row.rowId, disabled })
 
   const fullOid = useMemo(() => buildFullOid(row.node.oid, row.instance), [row.node.oid, row.instance])
   const fullOidError = rowError?.field === 'fullOid'
   const targetError = rowError?.field === 'targetValue'
   const currentLoading = row.currentValue.state === 'loading'
   const currentErrorMsg = row.currentValue.state === 'err' ? row.currentValue.error : undefined
+  const rowStyle: React.CSSProperties = {
+    borderBottom: '1px solid #f0f0f0',
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.85 : 1,
+    background: isDragging ? '#f6ffed' : '#fff',
+    position: 'relative',
+    zIndex: isDragging ? 1 : undefined
+  }
 
   const instanceControl = row.instanceOptions && row.instanceOptions.length > 0
     ? (
@@ -107,7 +122,20 @@ export function SetRow(props: SetRowProps): React.ReactElement {
     )
 
   return (
-    <tr style={{ borderBottom: '1px solid #f0f0f0' }}>
+    <tr ref={setNodeRef} style={rowStyle}>
+      <td style={{ padding: '6px 4px', textAlign: 'center', width: 32 }}>
+        <Tooltip title="拖拽排序">
+          <Button
+            size="small"
+            type="text"
+            icon={<HolderOutlined />}
+            disabled={disabled}
+            style={{ cursor: disabled ? 'not-allowed' : 'grab', color: '#999' }}
+            {...attributes}
+            {...listeners}
+          />
+        </Tooltip>
+      </td>
       <td style={{ padding: '6px 4px', textAlign: 'center', width: 36, color: '#999' }}>
         {index + 1}
       </td>
@@ -164,22 +192,6 @@ export function SetRow(props: SetRowProps): React.ReactElement {
       </td>
       <td style={{ padding: '6px 4px', width: 120, textAlign: 'right' }}>
         <Space size={2}>
-          <Tooltip title="上移">
-            <Button
-              size="small"
-              icon={<ArrowUpOutlined />}
-              onClick={() => onMove('up')}
-              disabled={disabled || index === 0}
-            />
-          </Tooltip>
-          <Tooltip title="下移">
-            <Button
-              size="small"
-              icon={<ArrowDownOutlined />}
-              onClick={() => onMove('down')}
-              disabled={disabled || index === total - 1}
-            />
-          </Tooltip>
           <Tooltip title="删除行">
             <Button
               size="small"

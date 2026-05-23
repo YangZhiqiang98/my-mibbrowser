@@ -1,4 +1,5 @@
 import { useCallback, useState } from 'react'
+import { arrayMove } from '@dnd-kit/sortable'
 import type { MibTreeNodeData } from '../../types'
 import type { SetRowDraft, SetRowPatch } from './types'
 import { makeRowFromNode } from './rowUtils'
@@ -9,6 +10,7 @@ export interface UseSetRowsApi {
   remove: (rowId: string) => void
   patch: (rowId: string, patch: SetRowPatch) => void
   move: (rowId: string, direction: 'up' | 'down') => void
+  moveTo: (activeRowId: string, overRowId: string) => void
   reset: () => void
 }
 
@@ -47,7 +49,16 @@ export function useSetRows(initial: SetRowDraft[] = []): UseSetRowsApi {
     })
   }, [])
 
+  const moveTo = useCallback((activeRowId: string, overRowId: string) => {
+    setRows((prev) => {
+      const oldIndex = prev.findIndex((r) => r.rowId === activeRowId)
+      const newIndex = prev.findIndex((r) => r.rowId === overRowId)
+      if (oldIndex < 0 || newIndex < 0 || oldIndex === newIndex) return prev
+      return arrayMove(prev, oldIndex, newIndex)
+    })
+  }, [])
+
   const reset = useCallback(() => setRows([]), [])
 
-  return { rows, append, remove, patch, move, reset }
+  return { rows, append, remove, patch, move, moveTo, reset }
 }
