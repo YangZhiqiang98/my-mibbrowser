@@ -649,3 +649,51 @@ html, body, #root {
   color: #475569;
   font-size: 12px;
 }
+
+.mib-diagnostics-notice {
+  max-width: 420px;
+}
+
+.mib-diagnostics-preview {
+  margin-top: 4px;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.mib-diagnostics-modal-body {
+  max-height: min(62vh, 560px);
+  overflow: auto;
+  padding-right: 6px;
+}
+
+.mib-diagnostics-section + .mib-diagnostics-section {
+  margin-top: 16px;
+}
+
+.mib-diagnostics-section h4 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.mib-diagnostics-section ul {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.mib-diagnostics-section li {
+  margin-bottom: 8px;
+  color: #334155;
+  font-size: 12px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.mib-diagnostics-section-error h4 {
+  color: #cf1322;
+}
+
+.mib-diagnostics-section-warning h4 {
+  color: #d48806;
+}

@@ -118,3 +118,31 @@ This is **not** a generic React event-bubbling issue you can paper over with `st
 - Anchors with current canonical usage:
   - `src/renderer/src/components/Toolbar.tsx` — `profileMenuItems` (profile apply via item-level `onClick`).
   - `src/renderer/src/components/MibTreePanel.tsx` — `contextMenuItems` (right-click SNMP operations and SET, all via item-level `onClick`).
+
+---
+
+## Constraint: Long Diagnostics Must Not Use Toast Messages
+
+Large diagnostic payloads, such as MIB parse errors and dependency warnings, must not be rendered as full text through AntD `message.error()` / `message.warning()`.
+
+### Why
+
+`message` is a short toast surface. When a MIB dependency warning includes many modules and symbols, a joined string can span the full window width, cover the workspace, and leave the user without a practical way to inspect or dismiss it.
+
+### Required Pattern
+
+- Use a short, dismissible `notification` for the summary.
+- Keep the summary bounded: counts plus a truncated first item are enough.
+- Provide an explicit action, such as `View details`, that opens a scrollable Modal or panel with the full diagnostic list.
+- Keep full diagnostics as structured arrays until render time. Do not join them into one large string for UI display.
+
+### Good/Base/Bad Cases
+
+- Good: `notification.warning({ message: 'MIB diagnostics', description: <bounded summary>, btn: <Button>View details</Button> })`.
+- Base: status bar says `Loaded 1 module(s)` while diagnostics are available in a modal.
+- Bad: `message.warning(result.dependencyWarnings.map((w) => w.message).join('; '))`.
+
+### Tests / Verification
+
+- Typecheck must cover the diagnostics state shape.
+- Manual smoke should load a MIB with multiple warnings and verify the workspace remains usable, the notice is dismissible, and details are scrollable.

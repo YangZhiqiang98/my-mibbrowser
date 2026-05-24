@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react'
-import { Input, Button, Tooltip, message, Tree, Dropdown, Tag, App } from 'antd'
+import { Input, Button, Tooltip, message, Tree, Dropdown, Tag, App, Modal } from 'antd'
 import type { MenuProps, TreeProps } from 'antd'
 import {
   SearchOutlined,
@@ -41,10 +41,16 @@ interface MibTreePanelProps {
   width: number
 }
 
+interface MibDiagnosticsState {
+  parseErrors: string[]
+  dependencyWarnings: string[]
+  warnings: string[]
+}
+
 export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
   // Tool-window launch errors use the App-bound message API. The legacy
   // static `message` import is still used by parse / load paths in this panel.
-  const { message: appMessage } = App.useApp()
+  const { message: appMessage, notification } = App.useApp()
   const mibTree = useAppStore((s) => s.mibTree)
   const setMibTree = useAppStore((s) => s.setMibTree)
   const selectedNode = useAppStore((s) => s.selectedMibNode)
@@ -63,6 +69,8 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
   const [searchMatchIds, setSearchMatchIds] = useState<string[]>([])
   const [currentMatchIndex, setCurrentMatchIndex] = useState(0)
   const [detailHeight, setDetailHeight] = useState(180)
+  const [mibDiagnostics, setMibDiagnostics] = useState<MibDiagnosticsState | null>(null)
+  const [isDiagnosticsModalOpen, setIsDiagnosticsModalOpen] = useState(false)
   const treeRef = useRef<{ scrollTo: (info: { key: string }) => void } | null>(null)
   const isDetailDragging = useRef(false)
   const detailStartY = useRef(0)
@@ -210,6 +218,42 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
       return valid
     })
   }, [validNodeIds])
+
+  const showMibParseDiagnostics = useCallback((result: MibParseResult): void => {
+    const diagnostics = buildMibDiagnostics(result)
+    const totalCount = diagnostics.parseErrors.length + diagnostics.dependencyWarnings.length + diagnostics.warnings.length
+    if (totalCount === 0) return
+
+    setMibDiagnostics(diagnostics)
+
+    const firstMessage =
+      diagnostics.parseErrors[0] ??
+      diagnostics.dependencyWarnings[0] ??
+      diagnostics.warnings[0] ??
+      ''
+    const summaryParts = [
+      diagnostics.parseErrors.length > 0 ? `${diagnostics.parseErrors.length} parse error(s)` : '',
+      diagnostics.dependencyWarnings.length > 0 ? `${diagnostics.dependencyWarnings.length} dependency warning(s)` : '',
+      diagnostics.warnings.length > 0 ? `${diagnostics.warnings.length} warning(s)` : ''
+    ].filter(Boolean)
+
+    notification.warning({
+      message: 'MIB diagnostics',
+      description: (
+        <div className="mib-diagnostics-notice">
+          <div>{summaryParts.join(', ')}</div>
+          {firstMessage && <div className="mib-diagnostics-preview">{truncateText(firstMessage, 160)}</div>}
+        </div>
+      ),
+      btn: (
+        <Button size="small" type="link" onClick={() => setIsDiagnosticsModalOpen(true)}>
+          View details
+        </Button>
+      ),
+      duration: 8,
+      placement: 'topRight'
+    })
+  }, [notification])
 
   const handleOpenFiles = useCallback(async () => {
     setStatusMessage('Loading MIB files...')
@@ -632,7 +676,7 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
       message.error('Failed to read dropped files')
       setStatusMessage('Ready')
     }
-  }, [setMibTree, addLoadedModule, setStatusMessage])
+  }, [setMibTree, addLoadedModule, setStatusMessage, showMibParseDiagnostics])
 
   return (
     <div
@@ -779,19 +823,68 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
         </>
       )}
 
+      <Modal
+        title="MIB diagnostics"
+        open={isDiagnosticsModalOpen}
+        onCancel={() => setIsDiagnosticsModalOpen(false)}
+        footer={[
+          <Button key="close" onClick={() => setIsDiagnosticsModalOpen(false)}>
+            Close
+          </Button>
+        ]}
+        width={820}
+      >
+        {mibDiagnostics && <MibDiagnosticsDetails diagnostics={mibDiagnostics} />}
+      </Modal>
+
     </div>
   )
 }
 
-function showMibParseDiagnostics(result: MibParseResult): void {
-  if (result.errors.length > 0) {
-    message.error(`Parse errors: ${result.errors.map((e) => e.message).join('; ')}`)
+function buildMibDiagnostics(result: MibParseResult): MibDiagnosticsState {
+  return {
+    parseErrors: result.errors.map((error) => error.message),
+    dependencyWarnings: result.dependencyWarnings.map((warning) => warning.message),
+    warnings: result.warnings
   }
-  if (result.dependencyWarnings.length > 0) {
-    message.warning(`MIB dependency warnings: ${result.dependencyWarnings.map((w) => w.message).join('; ')}`)
-  } else if (result.warnings.length > 0) {
-    message.warning(`MIB warnings: ${result.warnings.join('; ')}`)
-  }
+}
+
+function truncateText(value: string, maxLength: number): string {
+  if (value.length <= maxLength) return value
+  return `${value.slice(0, maxLength - 1)}…`
+}
+
+function MibDiagnosticsDetails({ diagnostics }: { diagnostics: MibDiagnosticsState }): React.ReactElement {
+  return (
+    <div className="mib-diagnostics-modal-body">
+      <DiagnosticSection title="Parse errors" items={diagnostics.parseErrors} tone="error" />
+      <DiagnosticSection title="Dependency warnings" items={diagnostics.dependencyWarnings} tone="warning" />
+      <DiagnosticSection title="Warnings" items={diagnostics.warnings} tone="warning" />
+    </div>
+  )
+}
+
+function DiagnosticSection({
+  title,
+  items,
+  tone
+}: {
+  title: string
+  items: string[]
+  tone: 'error' | 'warning'
+}): React.ReactElement | null {
+  if (items.length === 0) return null
+
+  return (
+    <section className={`mib-diagnostics-section mib-diagnostics-section-${tone}`}>
+      <h4>{title} ({items.length})</h4>
+      <ul>
+        {items.map((item, index) => (
+          <li key={`${title}-${index}`}>{item}</li>
+        ))}
+      </ul>
+    </section>
+  )
 }
 
 /**
