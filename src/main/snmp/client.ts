@@ -1,6 +1,7 @@
 // @ts-expect-error net-snmp has no TS types bundled
 import snmp from 'net-snmp'
 import type { SnmpConfig, SnmpResult, SnmpVarbind, SnmpSetValue, SecurityLevel } from './types'
+import { resolveAuthProtocol, resolvePrivProtocol, resolveSnmpTransport } from './options'
 
 /**
  * Raw varbind shape returned by net-snmp before formatting.
@@ -153,21 +154,13 @@ function formatVarbindValue(varbind: { oid: string; type: number; value: unknown
  * Create an SNMP session based on configuration
  */
 function createSession(config: SnmpConfig): ReturnType<typeof snmp.createSession> {
+  const transport = resolveSnmpTransport(config.transport)
+
   if (config.version === 'v3') {
     const securityLevelMap: Record<SecurityLevel, number> = {
       noAuthNoPriv: snmp.SecurityLevel.noAuthNoPriv,
       authNoPriv: snmp.SecurityLevel.authNoPriv,
       authPriv: snmp.SecurityLevel.authPriv
-    }
-
-    const authProtocolMap: Record<string, string> = {
-      md5: snmp.AuthProtocols.md5,
-      sha: snmp.AuthProtocols.sha
-    }
-
-    const privProtocolMap: Record<string, string> = {
-      des: snmp.PrivProtocols.des,
-      aes: snmp.PrivProtocols.aes
     }
 
     const user: Record<string, unknown> = {
@@ -176,12 +169,12 @@ function createSession(config: SnmpConfig): ReturnType<typeof snmp.createSession
     }
 
     if (config.securityLevel !== 'noAuthNoPriv') {
-      user.authProtocol = authProtocolMap[config.authProtocol] || snmp.AuthProtocols.md5
+      user.authProtocol = resolveAuthProtocol(config.authProtocol)
       user.authKey = config.authPassword
     }
 
     if (config.securityLevel === 'authPriv') {
-      user.privProtocol = privProtocolMap[config.privProtocol] || snmp.PrivProtocols.des
+      user.privProtocol = resolvePrivProtocol(config.privProtocol)
       user.privKey = config.privPassword
     }
 
@@ -190,7 +183,7 @@ function createSession(config: SnmpConfig): ReturnType<typeof snmp.createSession
       timeout: config.timeout,
       retries: config.retries,
       engineID: undefined,
-      transport: 'udp4'
+      transport
     })
   }
 
@@ -198,6 +191,7 @@ function createSession(config: SnmpConfig): ReturnType<typeof snmp.createSession
     port: config.port,
     timeout: config.timeout,
     retries: config.retries,
+    transport,
     version: config.version === 'v1' ? snmp.Version1 : snmp.Version2c
   })
 }

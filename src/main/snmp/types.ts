@@ -11,12 +11,8 @@ export type SecurityLevel = 'noAuthNoPriv' | 'authNoPriv' | 'authPriv'
 /**
  * SNMPv3 authentication protocol
  */
-export type AuthProtocol = 'md5' | 'sha'
-
-/**
- * SNMPv3 privacy/encryption protocol
- */
-export type PrivProtocol = 'des' | 'aes'
+import type { AuthProtocol, PrivProtocol, SnmpTransport } from '../../shared/snmpOptions'
+export type { AuthProtocol, PrivProtocol, SnmpTransport }
 
 /**
  * SNMP operation type
@@ -51,6 +47,8 @@ export interface SnmpConfig {
   timeout: number
   /** Number of retries */
   retries: number
+  /** UDP transport/IP family used by net-snmp */
+  transport: SnmpTransport
   /** Default max repetitions for GETBULK / BULK_WALK */
   bulkMaxRepetitions: number
   /** Default non-repeaters for GETBULK */

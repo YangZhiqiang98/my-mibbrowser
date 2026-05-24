@@ -61,6 +61,7 @@ const defaultConfig: SnmpConfig = {
   privPassword: '',
   timeout: 5000,
   retries: 1,
+  transport: 'udp4',
   bulkMaxRepetitions: 10,
   bulkNonRepeaters: 0
 }
@@ -81,6 +82,7 @@ export function normalizeSnmpConfig(config: Partial<SnmpConfig>): SnmpConfig {
     privPassword: config.privPassword ?? defaultConfig.privPassword,
     timeout: config.timeout ?? defaultConfig.timeout,
     retries: config.retries ?? defaultConfig.retries,
+    transport: config.transport ?? defaultConfig.transport,
     bulkMaxRepetitions: config.bulkMaxRepetitions ?? defaultConfig.bulkMaxRepetitions,
     bulkNonRepeaters: config.bulkNonRepeaters ?? defaultConfig.bulkNonRepeaters
   }

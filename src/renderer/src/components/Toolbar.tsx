@@ -11,7 +11,12 @@ import {
   StopOutlined
 } from '@ant-design/icons'
 import { normalizeSnmpConfig, useAppStore } from '../stores/appStore'
-import type { SnmpConfig, SecurityLevel, AuthProtocol, PrivProtocol } from '../../../main/snmp/types'
+import type { SnmpConfig, SecurityLevel, AuthProtocol, PrivProtocol, SnmpTransport } from '../../../main/snmp/types'
+import {
+  SNMP_AUTH_PROTOCOL_OPTIONS,
+  SNMP_PRIV_PROTOCOL_OPTIONS,
+  SNMP_TRANSPORT_OPTIONS
+} from '../../../shared/snmpOptions'
 
 export function Toolbar(): React.ReactElement {
   const { message } = App.useApp()
@@ -237,6 +242,14 @@ export function Toolbar(): React.ReactElement {
                 ]}
               />
             </div>
+            <div className="query-form-item">
+              <label>Transport</label>
+              <Select
+                value={config.transport}
+                onChange={(v) => setConfig({ transport: v as SnmpTransport })}
+                options={[...SNMP_TRANSPORT_OPTIONS]}
+              />
+            </div>
             {config.version !== 'v3' && (
               <div className="query-form-item">
                 <label>Community</label>
@@ -280,10 +293,7 @@ export function Toolbar(): React.ReactElement {
                       <Select
                         value={config.authProtocol}
                         onChange={(v) => setConfig({ authProtocol: v as AuthProtocol })}
-                        options={[
-                          { label: 'MD5', value: 'md5' },
-                          { label: 'SHA', value: 'sha' }
-                        ]}
+                        options={[...SNMP_AUTH_PROTOCOL_OPTIONS]}
                       />
                     </div>
                     <div className="query-form-item">
@@ -303,10 +313,7 @@ export function Toolbar(): React.ReactElement {
                       <Select
                         value={config.privProtocol}
                         onChange={(v) => setConfig({ privProtocol: v as PrivProtocol })}
-                        options={[
-                          { label: 'DES', value: 'des' },
-                          { label: 'AES', value: 'aes' }
-                        ]}
+                        options={[...SNMP_PRIV_PROTOCOL_OPTIONS]}
                       />
                     </div>
                     <div className="query-form-item">

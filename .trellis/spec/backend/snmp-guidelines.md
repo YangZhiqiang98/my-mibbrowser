@@ -225,9 +225,67 @@ Bulk sizing is part of how this app talks to a device, not a local display prefe
 
 ---
 
+## Constraint 6: SNMPv3 Option Mapping Must Be Centralized And Non-Downgrading
+
+SNMPv3 authentication, privacy, and transport choices cross the renderer profile UI, persisted `SnmpConfig`, preload IPC types, and `net-snmp` session creation. The allowed string values must come from `src/shared/snmpOptions.ts`, and main-process conversion to `net-snmp` constants must go through `src/main/snmp/options.ts`.
+
+### Signatures
+
+```typescript
+export function resolveAuthProtocol(protocol: string): number
+export function resolvePrivProtocol(protocol: string): number
+export function resolveSnmpTransport(transport: string): SnmpTransport
+```
+
+`SnmpConfig.transport` is the UDP transport / IP-family selector passed into both `snmp.createSession()` and `snmp.createV3Session()`. Current supported values are `udp4` and `udp6`, matching the installed `net-snmp` package.
+
+### Validation & Error Matrix
+
+| Condition | Required behavior |
+|---|---|
+| Unknown auth protocol, e.g. `sha1024` | Throw `Unsupported SNMPv3 auth protocol: <value>` before creating a session |
+| Unknown privacy protocol, e.g. `3des` | Throw `Unsupported SNMPv3 privacy protocol: <value>` before creating a session |
+| Unknown transport / IP family, e.g. `tcp` | Throw `Unsupported SNMP transport or IP family: <value>` before creating a session |
+| Old profile has no `transport` field | `normalizeSnmpConfig()` must default it to `udp4` |
+
+### Why
+
+Silent fallback is a security bug. If a user selects or loads an unsupported SNMPv3 option, the app must not downgrade to MD5, DES, or IPv4 behind their back. The existing SNMP operation wrappers already catch `createSession()` failures and return a normal `{ success: false, error }` result, so explicit validation errors surface through the same IPC and UI path as other connection failures.
+
+### How to Apply
+
+- Do not define auth / privacy / transport option arrays in components. Import the shared option lists instead.
+- Do not add `|| snmp.AuthProtocols.md5`, `|| snmp.PrivProtocols.des`, or equivalent fallback logic in `createSession()`.
+- Do not expose TCP, TLS, DTLS, TSM, 3DES, AES-192, or DOCSIS DH options unless the installed SNMP backend actually supports them and tests prove the mapping.
+- When adding a new supported option, update `src/shared/snmpOptions.ts`, `src/main/snmp/options.ts`, and tests together.
+
+### Tests Required
+
+- Unit tests for every newly exposed protocol mapping.
+- Regression tests proving unsupported auth, privacy, and transport values throw before session creation.
+- Config normalization tests proving old profiles still receive `transport: 'udp4'`.
+
+### Wrong vs Correct
+
+#### Wrong
+
+```typescript
+user.authProtocol = authProtocolMap[config.authProtocol] || snmp.AuthProtocols.md5
+```
+
+#### Correct
+
+```typescript
+user.authProtocol = resolveAuthProtocol(config.authProtocol)
+```
+
+---
+
 ## Cross-References
 
 - `src/main/snmp/client.ts` — canonical implementations of `oidInSubtree`, `stripLeadingDot`, `formatVarbindValue`, `snmpWalk`, `snmpBulkWalk`, `snmpGetBulk`, `flattenBulkVarbinds`, `cancelCurrentSnmpOperation`, and the `finish(session, result)` pattern in all six SNMP entry points.
+- `src/main/snmp/options.ts` — main-process mapping from supported SNMP option keys to `net-snmp` constants, with explicit unsupported-option errors.
+- `src/shared/snmpOptions.ts` — renderer-safe shared option keys and labels for profiles and connection settings UI.
 - `src/main/mib/parser.ts` — `resolveOidToName` is the other historical site for the leading-dot normalization rule. Any new OID-keyed lookup in the MIB layer must strip first.
 - `src/main/ipc/handlers.ts` — `handleSnmpCancel` is the IPC passthrough; the actual cancel logic lives in `cancelCurrentSnmpOperation` in `client.ts`.
 - [error-handling.md](./error-handling.md) — Walk results follow the `SnmpResult` envelope; out-of-subtree termination is not an error. Abort follows the same envelope with the additional `aborted: true` flag.
