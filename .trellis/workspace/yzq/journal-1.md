@@ -735,3 +735,36 @@ Expanded SNMPv3 auth/privacy options from net-snmp capabilities, added UDP IPv6 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 18: Debug mode logging
+
+**Date**: 2026-05-25
+**Task**: Debug mode logging
+**Branch**: `main`
+
+### Summary
+
+Added an explicit Debug Mode toggle, IPC synchronization, centralized main-process debug logger, SNMP/MIB/IPC/tool-window lifecycle debug logs, tests for enabled/disabled and request field visibility, and logging spec guidance. Verified typecheck, lint, tests, and build.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b88d12e` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
