@@ -669,3 +669,36 @@ Added dependency-aware MIB parsing, structured missing-dependency diagnostics, r
 ### Next Steps
 
 - None - task complete
+
+
+## Session 16: SNMP table viewer
+
+**Date**: 2026-05-25
+**Task**: SNMP table viewer
+**Branch**: `main`
+
+### Summary
+
+Added a dedicated SNMP Table Viewer tool-window mode with table row assembly, filtering, sorting, column visibility, copy/CSV export, editable writable cells, metadata propagation, and table utility tests.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8eda023` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
