@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 16
+- **Total Sessions**: 17
 - **Last Active**: 2026-05-25
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~704 | Active |
+| `journal-1.md` | ~737 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 17 | 2026-05-25 | Advanced SNMPv3 options | `c2b48bf` | `main` |
 | 16 | 2026-05-25 | SNMP table viewer | `8eda023` | `main` |
 | 15 | 2026-05-25 | Dependency-aware MIB parsing | `5e0205f` | `main` |
 | 14 | 2026-05-24 | Cleanup Deprecated GET SET Code | `39e8bfb`, `d182edc` | `main` |

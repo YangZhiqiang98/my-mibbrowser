@@ -702,3 +702,36 @@ Added a dedicated SNMP Table Viewer tool-window mode with table row assembly, fi
 ### Next Steps
 
 - None - task complete
+
+
+## Session 17: Advanced SNMPv3 options
+
+**Date**: 2026-05-25
+**Task**: Advanced SNMPv3 options
+**Branch**: `main`
+
+### Summary
+
+Expanded SNMPv3 auth/privacy options from net-snmp capabilities, added UDP IPv6 transport selection, centralized option validation, preserved old profile normalization, documented the non-downgrading mapping contract, and verified typecheck/lint/tests/build.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `c2b48bf` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
