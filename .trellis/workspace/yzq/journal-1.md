@@ -768,3 +768,36 @@ Added an explicit Debug Mode toggle, IPC synchronization, centralized main-proce
 ### Next Steps
 
 - None - task complete
+
+
+## Session 19: MIB warning display
+
+**Date**: 2026-05-25
+**Task**: MIB warning display
+**Branch**: `main`
+
+### Summary
+
+Replaced oversized MIB warning toasts with bounded dismissible diagnostics notifications and a scrollable details modal. Updated frontend component guidance for long diagnostics. Verified typecheck, lint, tests, and build.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `5b28db0` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

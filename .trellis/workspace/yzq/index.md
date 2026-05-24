@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 18
+- **Total Sessions**: 19
 - **Last Active**: 2026-05-25
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~770 | Active |
+| `journal-1.md` | ~803 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 19 | 2026-05-25 | MIB warning display | `5b28db0` | `main` |
 | 18 | 2026-05-25 | Debug mode logging | `b88d12e` | `main` |
 | 17 | 2026-05-25 | Advanced SNMPv3 options | `c2b48bf` | `main` |
 | 16 | 2026-05-25 | SNMP table viewer | `8eda023` | `main` |
