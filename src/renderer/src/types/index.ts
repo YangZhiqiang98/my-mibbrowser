@@ -1,4 +1,5 @@
 import type { MibParseResult, MibNode } from '../../../main/mib/types'
+import type { MibNamedValue } from '../../../main/mib/types'
 import type { SnmpConfig, SnmpResult, SnmpSetValue, SnmpOperation } from '../../../main/snmp/types'
 import type {
   SnmpToolWindowContext,
@@ -136,5 +137,9 @@ export interface MibTreeNodeData {
   syntax: string
   module: string
   description?: string
+  enumValues?: MibNamedValue[]
+  bits?: MibNamedValue[]
+  textualConvention?: string
+  displayHint?: string
   children: MibTreeNodeData[]
 }

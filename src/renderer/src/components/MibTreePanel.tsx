@@ -18,7 +18,8 @@ import {
   NodeIndexOutlined,
   ReloadOutlined,
   DatabaseOutlined,
-  EditOutlined
+  EditOutlined,
+  ProfileOutlined
 } from '@ant-design/icons'
 import type { DataNode, EventDataNode } from 'antd/es/tree'
 import { useAppStore } from '../stores/appStore'
@@ -420,6 +421,25 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
     })
   }, [appMessage, mibTree, snmpConfig])
 
+  const openTableViewer = useCallback((node: MibTreeNodeData) => {
+    if (!node.oid) {
+      appMessage.warning('No OID available for this node')
+      return
+    }
+    if (node.kind !== 'table' && node.kind !== 'entry') {
+      appMessage.warning('Only table or entry nodes can open Table Viewer')
+      return
+    }
+    window.api.snmpTool.open({
+      kind: 'table',
+      seed: node,
+      snmpConfig,
+      mibTree
+    }).catch((error) => {
+      appMessage.error(`打开 Table Viewer 失败：${error instanceof Error ? error.message : String(error)}`)
+    })
+  }, [appMessage, mibTree, snmpConfig])
+
   const contextMenuItems: MenuProps['items'] = useMemo(() => {
     if (!contextMenuNode) return []
 
@@ -468,6 +488,13 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
             label: 'SET',
             disabled: !hasOid,
             onClick: () => openSetDialog(contextMenuNode)
+          },
+          {
+            key: 'snmp-table-viewer',
+            icon: <ProfileOutlined />,
+            label: 'Table Viewer',
+            disabled: !hasOid || (contextMenuNode.kind !== 'table' && contextMenuNode.kind !== 'entry'),
+            onClick: () => openTableViewer(contextMenuNode)
           }
         ]
       },
@@ -519,7 +546,7 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
         }
       }
     ]
-  }, [contextMenuNode, collectSubtreeKeys, setQueryOid, setSelectedNode, executeSnmpOperation, openGetDialog, openSetDialog])
+  }, [contextMenuNode, collectSubtreeKeys, setQueryOid, setSelectedNode, executeSnmpOperation, openGetDialog, openSetDialog, openTableViewer])
 
   // Drag a tree node into a GET / SET tool window drop zone. AntD Tree's
   // wrapped drag event is not reliable enough as the sole data channel across

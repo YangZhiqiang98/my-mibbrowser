@@ -60,13 +60,13 @@ function handleOpenToolWindow(_event: IpcMainInvokeEvent, request: SnmpToolWindo
 
   const parent = mainWindowRef && !mainWindowRef.isDestroyed() ? mainWindowRef : undefined
   const toolWindow = new BrowserWindow({
-    width: 980,
-    height: 640,
+    width: request.kind === 'table' ? 1180 : 980,
+    height: request.kind === 'table' ? 720 : 640,
     minWidth: 780,
     minHeight: 460,
     show: false,
     autoHideMenuBar: true,
-    title: 'GET / SET 多节点',
+    title: request.kind === 'table' ? 'SNMP Table Viewer' : 'GET / SET 多节点',
     parent,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),

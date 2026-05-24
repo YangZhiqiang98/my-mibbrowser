@@ -3,6 +3,7 @@ import { ConfigProvider, App as AntApp, Spin } from 'antd'
 import zhCN from 'antd/locale/zh_CN'
 import type { SnmpToolWindowContext } from '../../shared/toolWindowTypes'
 import { SetToolWindowContent } from './components/SetMultiNodeDialog/SetToolWindowContent'
+import { TableViewerContent } from './components/TableViewer/TableViewerContent'
 
 export function ToolWindowApp(): React.ReactElement {
   const [context, setContext] = useState<SnmpToolWindowContext | null>(null)
@@ -34,7 +35,9 @@ export function ToolWindowApp(): React.ReactElement {
               <Spin />
             </div>
           ) : (
-            <SetToolWindowContent context={context} />
+            context.kind === 'table'
+              ? <TableViewerContent context={context} />
+              : <SetToolWindowContent context={context} />
           )}
         </div>
       </AntApp>

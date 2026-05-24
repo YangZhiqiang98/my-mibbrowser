@@ -1,7 +1,8 @@
 import type { SnmpConfig } from '../main/snmp/types'
 import type { SnmpOperation } from '../main/snmp/types'
+import type { MibNamedValue } from '../main/mib/types'
 
-export type SnmpToolWindowKind = 'get' | 'set'
+export type SnmpToolWindowKind = 'get' | 'set' | 'table'
 
 export interface ToolWindowMibNode {
   id: string
@@ -12,6 +13,10 @@ export interface ToolWindowMibNode {
   syntax: string
   module: string
   description?: string
+  enumValues?: MibNamedValue[]
+  bits?: MibNamedValue[]
+  textualConvention?: string
+  displayHint?: string
   children: ToolWindowMibNode[]
 }
 

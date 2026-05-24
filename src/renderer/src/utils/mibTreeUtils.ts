@@ -1,4 +1,5 @@
 import type { MibTreeNodeData } from '../types'
+import type { MibNamedValue } from '../../../main/mib/types'
 
 interface RawMibNode {
   id: string
@@ -10,6 +11,10 @@ interface RawMibNode {
   syntax: string
   module: string
   description?: string
+  enumValues?: MibNamedValue[]
+  bits?: MibNamedValue[]
+  textualConvention?: string
+  displayHint?: string
   parentId: string | null
   children: string[]
 }
@@ -91,6 +96,10 @@ export function buildTreeFromNodes(nodes: RawMibNode[]): MibTreeNodeData[] {
       syntax: node.syntax,
       module: node.module,
       description: node.description,
+      enumValues: node.enumValues,
+      bits: node.bits,
+      textualConvention: node.textualConvention,
+      displayHint: node.displayHint,
       children: node.children
         .map(cid => dedupedMap.get(cid))
         .filter((n): n is RawMibNode => !!n)
