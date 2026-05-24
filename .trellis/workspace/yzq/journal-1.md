@@ -636,3 +636,36 @@ Removed unreachable legacy GET/SET AntD modal code, cleaned obsolete store/types
 ### Next Steps
 
 - None - task complete
+
+
+## Session 15: Dependency-aware MIB parsing
+
+**Date**: 2026-05-25
+**Task**: Dependency-aware MIB parsing
+**Branch**: `main`
+
+### Summary
+
+Added dependency-aware MIB parsing, structured missing-dependency diagnostics, richer MIB metadata, UI warning surfacing, cache invalidation, and parser regression tests.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `5e0205f` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
