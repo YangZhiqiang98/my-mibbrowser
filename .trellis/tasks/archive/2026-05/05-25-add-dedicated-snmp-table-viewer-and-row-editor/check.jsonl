@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/frontend/mib-tree-snmp-ops.md", "reason": "Verify table viewer does not regress existing MIB tree SNMP flows and tool-window behavior."}
+{"file": ".trellis/spec/backend/snmp-guidelines.md", "reason": "Verify OID matching, walk boundaries, and instance extraction follow protocol contracts."}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Verify table model and edit state are consistent across parser, IPC, and UI boundaries."}
