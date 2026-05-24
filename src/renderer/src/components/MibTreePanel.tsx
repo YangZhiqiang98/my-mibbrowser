@@ -26,6 +26,7 @@ import type { MibTreeNodeData } from '../types'
 import type { SnmpResult } from '../../../main/snmp/types'
 import { buildTreeFromNodes } from '../utils/mibTreeUtils'
 import { buildResultSession } from '../utils/resultColumns'
+import type { MibParseResult } from '../../../main/mib/types'
 
 const ACCESS_COLOR_MAP: Record<string, string> = {
   'read-only': 'blue',
@@ -212,9 +213,7 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
   const handleOpenFiles = useCallback(async () => {
     setStatusMessage('Loading MIB files...')
     const result = await window.api.mib.openFiles()
-    if (result.errors.length > 0) {
-      message.error(`Parse errors: ${result.errors.map((e: { message: string }) => e.message).join('; ')}`)
-    }
+    showMibParseDiagnostics(result)
     if (result.modules.length > 0) {
       const nodes = await window.api.mib.getTree()
       const tree = buildTreeFromNodes(nodes)
@@ -232,9 +231,7 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
   const handleOpenDirectory = useCallback(async () => {
     setStatusMessage('Loading MIB directory...')
     const result = await window.api.mib.openDirectory()
-    if (result.errors.length > 0) {
-      message.error(`Parse errors: ${result.errors.map((e: { message: string }) => e.message).join('; ')}`)
-    }
+    showMibParseDiagnostics(result)
     if (result.modules.length > 0) {
       const nodes = await window.api.mib.getTree()
       const tree = buildTreeFromNodes(nodes)
@@ -591,9 +588,7 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
       const fileContents = await Promise.all(readPromises)
       const result = await window.api.mib.loadContent(fileContents)
 
-      if (result.errors.length > 0) {
-        message.error(`Parse errors: ${result.errors.map((e: { message: string }) => e.message).join('; ')}`)
-      }
+      showMibParseDiagnostics(result)
       if (result.modules.length > 0) {
         const nodes = await window.api.mib.getTree()
         const tree = buildTreeFromNodes(nodes)
@@ -759,6 +754,17 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
 
     </div>
   )
+}
+
+function showMibParseDiagnostics(result: MibParseResult): void {
+  if (result.errors.length > 0) {
+    message.error(`Parse errors: ${result.errors.map((e) => e.message).join('; ')}`)
+  }
+  if (result.dependencyWarnings.length > 0) {
+    message.warning(`MIB dependency warnings: ${result.dependencyWarnings.map((w) => w.message).join('; ')}`)
+  } else if (result.warnings.length > 0) {
+    message.warning(`MIB warnings: ${result.warnings.join('; ')}`)
+  }
 }
 
 /**

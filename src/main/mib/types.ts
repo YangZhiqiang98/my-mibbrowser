@@ -14,6 +14,50 @@ export type MibStatus = 'current' | 'deprecated' | 'obsolete'
 export type MibNodeKind = 'scalar' | 'table' | 'entry' | 'column' | 'notification' | 'group' | 'module' | 'root'
 
 /**
+ * Named numeric value from an INTEGER enum or BITS syntax.
+ */
+export interface MibNamedValue {
+  /** Label from the MIB, e.g. "up" */
+  name: string
+  /** Numeric value, e.g. 1 */
+  value: number
+}
+
+/**
+ * Parsed TEXTUAL-CONVENTION metadata.
+ */
+export interface MibTextualConvention {
+  /** Convention name, e.g. "DisplayString" */
+  name: string
+  /** Underlying SYNTAX field */
+  syntax: string
+  /** Optional DISPLAY-HINT */
+  displayHint?: string
+  /** STATUS value */
+  status: MibStatus
+  /** Human-readable description */
+  description: string
+  /** Source MIB module name */
+  module: string
+}
+
+/**
+ * Dependency warning produced while resolving IMPORTS.
+ */
+export interface MibDependencyWarning {
+  /** Module that imports the missing dependency */
+  module: string
+  /** Source file for the importing module, when known */
+  sourceFile?: string
+  /** Missing imported module name */
+  missingModule: string
+  /** Imported symbols requested from the missing module */
+  symbols: string[]
+  /** User-facing diagnostic */
+  message: string
+}
+
+/**
  * A single node in the MIB tree
  */
 export interface MibNode {
@@ -47,6 +91,16 @@ export interface MibNode {
   indexColumns: string[]
   /** Raw OID definition from MIB file, e.g. "system 1" from ::= { system 1 } */
   oidDef: string
+  /** INTEGER enum values parsed from SYNTAX, if present */
+  enumValues?: MibNamedValue[]
+  /** BITS values parsed from SYNTAX, if present */
+  bits?: MibNamedValue[]
+  /** TEXTUAL-CONVENTION name used by SYNTAX, if known */
+  textualConvention?: string
+  /** DISPLAY-HINT inherited from a textual convention, if known */
+  displayHint?: string
+  /** Source file for this node, when known */
+  sourceFile?: string
 }
 
 /**
@@ -69,6 +123,12 @@ export interface MibModule {
   nodes: MibNode[]
   /** Import statements */
   imports: Record<string, string[]>
+  /** Source file for this module, when known */
+  sourceFile?: string
+  /** Parsed textual conventions declared by this module */
+  textualConventions: Record<string, MibTextualConvention>
+  /** Dependency warnings scoped to this module */
+  dependencyWarnings: MibDependencyWarning[]
 }
 
 /**
@@ -81,6 +141,8 @@ export interface MibParseResult {
   errors: MibParseError[]
   /** Parse warnings */
   warnings: string[]
+  /** Structured dependency warnings */
+  dependencyWarnings: MibDependencyWarning[]
 }
 
 /**

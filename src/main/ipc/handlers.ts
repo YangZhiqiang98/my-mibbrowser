@@ -21,7 +21,7 @@ let accumulatedModules: MibModule[] = []
 // different directories happen to contain modules with the same name.
 let directoryModuleMap: Map<string, MibModule[]> = new Map()
 
-const CACHE_VERSION = 4 // Bump when cache format or parsing logic changes
+const CACHE_VERSION = 5 // Bump when cache format or parsing logic changes
 const CACHE_DIR_CONFIG_FILE = 'cache-dir-config.json'
 
 interface MibCache {
@@ -218,7 +218,7 @@ export function registerIpcHandlers(): void {
 async function handleOpenMibFiles(): Promise<MibParseResult> {
   const window = BrowserWindow.getFocusedWindow()
   if (!window) {
-    return { modules: [], errors: [{ line: 0, column: 0, message: 'No active window', severity: 'error' }], warnings: [] }
+    return { modules: [], errors: [{ line: 0, column: 0, message: 'No active window', severity: 'error' }], warnings: [], dependencyWarnings: [] }
   }
 
   const result = await dialog.showOpenDialog(window, {
@@ -231,7 +231,7 @@ async function handleOpenMibFiles(): Promise<MibParseResult> {
   })
 
   if (result.canceled || result.filePaths.length === 0) {
-    return { modules: [], errors: [], warnings: [] }
+    return { modules: [], errors: [], warnings: [], dependencyWarnings: [] }
   }
 
   const parseResult = mibParser.parseFiles(result.filePaths)
@@ -265,7 +265,7 @@ async function handleOpenMibFiles(): Promise<MibParseResult> {
 async function handleOpenMibDirectory(): Promise<MibParseResult> {
   const window = BrowserWindow.getFocusedWindow()
   if (!window) {
-    return { modules: [], errors: [{ line: 0, column: 0, message: 'No active window', severity: 'error' }], warnings: [] }
+    return { modules: [], errors: [{ line: 0, column: 0, message: 'No active window', severity: 'error' }], warnings: [], dependencyWarnings: [] }
   }
 
   const result = await dialog.showOpenDialog(window, {
@@ -274,7 +274,7 @@ async function handleOpenMibDirectory(): Promise<MibParseResult> {
   })
 
   if (result.canceled || result.filePaths.length === 0) {
-    return { modules: [], errors: [], warnings: [] }
+    return { modules: [], errors: [], warnings: [], dependencyWarnings: [] }
   }
 
   const dirPath = result.filePaths[0]

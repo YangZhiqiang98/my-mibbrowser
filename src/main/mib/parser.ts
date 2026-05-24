@@ -1,6 +1,28 @@
 import { readFileSync, readdirSync, existsSync } from 'fs'
 import { join, extname, basename } from 'path'
-import type { MibNode, MibModule, MibParseResult, MibParseError, MibAccess, MibStatus, MibNodeKind } from './types'
+import type {
+  MibNode,
+  MibModule,
+  MibParseResult,
+  MibParseError,
+  MibAccess,
+  MibStatus,
+  MibNodeKind,
+  MibNamedValue,
+  MibTextualConvention,
+  MibDependencyWarning
+} from './types'
+
+interface MibSource {
+  name: string
+  content: string
+  sourceFile?: string
+}
+
+interface MibModuleIndexEntry extends MibSource {
+  moduleName: string
+  imports: Record<string, string[]>
+}
 
 /**
  * Strip the IMPORTS section from MIB content to prevent imported symbols
@@ -18,19 +40,20 @@ export class MibParser {
   private modules: MibModule[] = []
   private errors: MibParseError[] = []
   private warnings: string[] = []
+  private dependencyWarnings: MibDependencyWarning[] = []
+  private textualConventionMap = new Map<string, MibTextualConvention>()
 
   /**
    * Parse one or more MIB files
    */
   parseFiles(filePaths: string[]): MibParseResult {
-    this.modules = []
-    this.errors = []
-    this.warnings = []
+    this.reset()
 
+    const sources: MibSource[] = []
     for (const filePath of filePaths) {
       try {
         const content = readFileSync(filePath, 'utf-8')
-        this.parseModule(content, basename(filePath))
+        sources.push({ name: basename(filePath), content, sourceFile: filePath })
       } catch (err) {
         this.errors.push({
           line: 0,
@@ -41,11 +64,8 @@ export class MibParser {
       }
     }
 
-    return {
-      modules: this.modules,
-      errors: this.errors,
-      warnings: this.warnings
-    }
+    this.parseSources(sources)
+    return this.buildResult()
   }
 
   /**
@@ -53,28 +73,13 @@ export class MibParser {
    * Accepts an array of { name, content } objects.
    */
   parseFileContents(fileContents: Array<{ name: string; content: string }>): MibParseResult {
-    this.modules = []
-    this.errors = []
-    this.warnings = []
-
-    for (const file of fileContents) {
-      try {
-        this.parseModule(file.content, file.name)
-      } catch (err) {
-        this.errors.push({
-          line: 0,
-          column: 0,
-          message: `Failed to parse ${file.name}: ${err instanceof Error ? err.message : String(err)}`,
-          severity: 'error'
-        })
-      }
-    }
-
-    return {
-      modules: this.modules,
-      errors: this.errors,
-      warnings: this.warnings
-    }
+    this.reset()
+    this.parseSources(fileContents.map((file) => ({
+      name: file.name,
+      content: file.content,
+      sourceFile: file.name
+    })))
+    return this.buildResult()
   }
 
   /**
@@ -85,7 +90,8 @@ export class MibParser {
       return {
         modules: [],
         errors: [{ line: 0, column: 0, message: `Directory not found: ${dirPath}`, severity: 'error' }],
-        warnings: []
+        warnings: [],
+        dependencyWarnings: []
       }
     }
 
@@ -95,11 +101,75 @@ export class MibParser {
     return this.parseFiles(files)
   }
 
-  /**
-   * Parse a single MIB module from text content
-   */
-  private parseModule(content: string, fileName: string): void {
-    const moduleName = this.extractModuleName(content, fileName)
+  private reset(): void {
+    this.modules = []
+    this.errors = []
+    this.warnings = []
+    this.dependencyWarnings = []
+    this.textualConventionMap = new Map()
+  }
+
+  private buildResult(): MibParseResult {
+    return {
+      modules: this.modules,
+      errors: this.errors,
+      warnings: this.warnings,
+      dependencyWarnings: this.dependencyWarnings
+    }
+  }
+
+  private parseSources(sources: MibSource[]): void {
+    const indexed = sources.map((source) => this.indexSource(source))
+    const ordered = orderByDependencies(indexed)
+
+    this.recordMissingDependencies(indexed)
+
+    for (const entry of ordered) {
+      try {
+        this.parseModuleFromSource(entry)
+      } catch (err) {
+        this.errors.push({
+          line: 0,
+          column: 0,
+          message: `Failed to parse ${entry.name}: ${err instanceof Error ? err.message : String(err)}`,
+          severity: 'error'
+        })
+      }
+    }
+
+    this.applyTextualConventionMetadata()
+  }
+
+  private indexSource(source: MibSource): MibModuleIndexEntry {
+    return {
+      ...source,
+      moduleName: this.extractModuleName(source.content, source.name),
+      imports: this.parseImports(source.content)
+    }
+  }
+
+  private recordMissingDependencies(indexed: MibModuleIndexEntry[]): void {
+    const availableModules = new Set(indexed.map((entry) => entry.moduleName))
+
+    for (const entry of indexed) {
+      for (const [moduleName, symbols] of Object.entries(entry.imports)) {
+        if (availableModules.has(moduleName)) continue
+
+        const warning: MibDependencyWarning = {
+          module: entry.moduleName,
+          sourceFile: entry.sourceFile,
+          missingModule: moduleName,
+          symbols,
+          message: `Module ${entry.moduleName} imports ${symbols.join(', ')} from missing module ${moduleName}`
+        }
+        this.dependencyWarnings.push(warning)
+        this.warnings.push(warning.message)
+      }
+    }
+  }
+
+  private parseModuleFromSource(source: MibSource): void {
+    const moduleName = this.extractModuleName(source.content, source.name)
 
     const module: MibModule = {
       name: moduleName,
@@ -109,33 +179,41 @@ export class MibParser {
       contactInfo: '',
       rootOid: '',
       nodes: [],
-      imports: {}
+      imports: {},
+      sourceFile: source.sourceFile,
+      textualConventions: {},
+      dependencyWarnings: this.dependencyWarnings.filter((warning) => warning.module === moduleName)
     }
 
     // Parse imports
-    module.imports = this.parseImports(content)
+    module.imports = this.parseImports(source.content)
 
     // Parse module identity
-    this.parseModuleIdentity(content, module)
+    this.parseModuleIdentity(source.content, module)
 
     // Strip IMPORTS section before parsing definitions to avoid
     // imported symbols being parsed as actual MIB definitions
-    const contentWithoutImports = stripImportsSection(content)
+    const contentWithoutImports = stripImportsSection(source.content)
+
+    module.textualConventions = this.parseTextualConventions(contentWithoutImports, moduleName)
+    for (const convention of Object.values(module.textualConventions)) {
+      this.textualConventionMap.set(convention.name, convention)
+    }
 
     // Parse object type definitions
-    const objectTypes = this.parseObjectTypes(contentWithoutImports, moduleName)
+    const objectTypes = this.parseObjectTypes(contentWithoutImports, moduleName, source.sourceFile)
     module.nodes.push(...objectTypes)
 
     // Parse object identity definitions
-    const objectIdentities = this.parseObjectIdentities(contentWithoutImports, moduleName)
+    const objectIdentities = this.parseObjectIdentities(contentWithoutImports, moduleName, source.sourceFile)
     module.nodes.push(...objectIdentities)
 
     // Parse notification types
-    const notifications = this.parseNotificationTypes(contentWithoutImports, moduleName)
+    const notifications = this.parseNotificationTypes(contentWithoutImports, moduleName, source.sourceFile)
     module.nodes.push(...notifications)
 
     // Parse OBJECT IDENTIFIER definitions (e.g. "rcOptBertObjects OBJECT IDENTIFIER ::= { parent 1 }")
-    const objectIdDefs = this.parseObjectIdDefs(contentWithoutImports, moduleName)
+    const objectIdDefs = this.parseObjectIdDefs(contentWithoutImports, moduleName, source.sourceFile)
     module.nodes.push(...objectIdDefs)
 
     this.modules.push(module)
@@ -212,7 +290,7 @@ export class MibParser {
   /**
    * Parse all OBJECT-TYPE definitions
    */
-  private parseObjectTypes(content: string, moduleName: string): MibNode[] {
+  private parseObjectTypes(content: string, moduleName: string, sourceFile?: string): MibNode[] {
     const nodes: MibNode[] = []
 
     // Match OBJECT-TYPE blocks
@@ -224,11 +302,14 @@ export class MibParser {
       const body = match[2]
       const oidDef = match[3].trim()
 
-      const syntax = this.extractField(body, 'SYNTAX') || ''
+      const syntax = this.extractSyntax(body)
       const access = this.extractAccess(body)
       const status = this.extractStatus(body)
       const description = this.extractField(body, 'DESCRIPTION') || ''
-      const kind = this.determineKind(syntax, access)
+      const indexColumns = this.extractIndexColumns(body)
+      const kind = this.determineKind(syntax, access, indexColumns)
+      const bits = extractBits(syntax)
+      const enumValues = extractEnumValues(syntax)
 
       const node: MibNode = {
         id: `${moduleName}::${name}`,
@@ -244,8 +325,12 @@ export class MibParser {
         parentId: null,
         children: [],
         isTable: syntax.includes('SEQUENCE OF') || syntax.includes('SEQUENCE'),
-        indexColumns: this.extractIndexColumns(body),
-        oidDef
+        indexColumns,
+        oidDef,
+        enumValues: enumValues.length > 0 ? enumValues : undefined,
+        bits: bits.length > 0 ? bits : undefined,
+        textualConvention: extractSyntaxBase(syntax),
+        sourceFile
       }
 
       nodes.push(node)
@@ -257,7 +342,7 @@ export class MibParser {
   /**
    * Parse OBJECT-IDENTITY definitions
    */
-  private parseObjectIdentities(content: string, moduleName: string): MibNode[] {
+  private parseObjectIdentities(content: string, moduleName: string, sourceFile?: string): MibNode[] {
     const nodes: MibNode[] = []
     const regex = /(\S+)\s+(?:OBJECT-IDENTITY|MODULE-IDENTITY)\s*([\s\S]*?)(?::=\s*\{([^}]+)\})/g
     let match: RegExpExecArray | null
@@ -284,7 +369,8 @@ export class MibParser {
         children: [],
         isTable: false,
         indexColumns: [],
-        oidDef
+        oidDef,
+        sourceFile
       }
 
       nodes.push(node)
@@ -296,7 +382,7 @@ export class MibParser {
   /**
    * Parse NOTIFICATION-TYPE definitions
    */
-  private parseNotificationTypes(content: string, moduleName: string): MibNode[] {
+  private parseNotificationTypes(content: string, moduleName: string, sourceFile?: string): MibNode[] {
     const nodes: MibNode[] = []
     const regex = /(\S+)\s+NOTIFICATION-TYPE\s*([\s\S]*?)(?::=\s*\{([^}]+)\})/g
     let match: RegExpExecArray | null
@@ -323,7 +409,8 @@ export class MibParser {
         children: [],
         isTable: false,
         indexColumns: [],
-        oidDef
+        oidDef,
+        sourceFile
       }
 
       nodes.push(node)
@@ -336,7 +423,7 @@ export class MibParser {
    * Parse OBJECT IDENTIFIER definitions (e.g. "rcOptBertObjects OBJECT IDENTIFIER ::= { parent 1 }")
    * These are container/group nodes commonly used in MIB files to organize subtrees.
    */
-  private parseObjectIdDefs(content: string, moduleName: string): MibNode[] {
+  private parseObjectIdDefs(content: string, moduleName: string, sourceFile?: string): MibNode[] {
     const nodes: MibNode[] = []
     const regex = /(\S+)\s+OBJECT\s+IDENTIFIER\s*::=\s*\{([^}]+)\}/g
     let match: RegExpExecArray | null
@@ -360,7 +447,8 @@ export class MibParser {
         children: [],
         isTable: false,
         indexColumns: [],
-        oidDef
+        oidDef,
+        sourceFile
       }
 
       nodes.push(node)
@@ -381,6 +469,59 @@ export class MibParser {
     // Handle multi-line quoted strings
     value = value.replace(/\s*\n\s*/g, ' ')
     return value
+  }
+
+  private extractSyntax(body: string): string {
+    const match = body.match(/SYNTAX\s+([\s\S]*?)(?=\n\s*(?:UNITS|MAX-ACCESS|ACCESS|STATUS|DESCRIPTION|REFERENCE|INDEX|AUGMENTS|DEFVAL)\b|$)/i)
+    if (!match) return ''
+    return normalizeMibInlineValue(match[1])
+  }
+
+  private parseTextualConventions(content: string, moduleName: string): Record<string, MibTextualConvention> {
+    const conventions: Record<string, MibTextualConvention> = {}
+    const regex = /(\S+)\s+::=\s+TEXTUAL-CONVENTION\s*([\s\S]*?)(?=\n\S+\s+(?:OBJECT-TYPE|OBJECT-IDENTITY|MODULE-IDENTITY|NOTIFICATION-TYPE|OBJECT\s+IDENTIFIER|::=\s+TEXTUAL-CONVENTION)|\s+END\b)/g
+    let match: RegExpExecArray | null
+
+    while ((match = regex.exec(content)) !== null) {
+      const name = match[1]
+      const body = match[2]
+      const syntax = this.extractSyntax(body)
+      const displayHint = this.extractField(body, 'DISPLAY-HINT') || undefined
+      const description = this.extractField(body, 'DESCRIPTION') || ''
+      const convention: MibTextualConvention = {
+        name,
+        syntax,
+        displayHint,
+        status: this.extractStatus(body),
+        description: this.cleanDescription(description),
+        module: moduleName
+      }
+      conventions[name] = convention
+    }
+
+    return conventions
+  }
+
+  private applyTextualConventionMetadata(): void {
+    for (const module of this.modules) {
+      for (const node of module.nodes) {
+        const base = node.textualConvention || extractSyntaxBase(node.syntax)
+        const convention = this.textualConventionMap.get(base)
+        if (!convention) continue
+
+        node.textualConvention = convention.name
+        node.displayHint = convention.displayHint
+
+        if (!node.enumValues || node.enumValues.length === 0) {
+          const enumValues = extractEnumValues(convention.syntax)
+          if (enumValues.length > 0) node.enumValues = enumValues
+        }
+        if (!node.bits || node.bits.length === 0) {
+          const bits = extractBits(convention.syntax)
+          if (bits.length > 0) node.bits = bits
+        }
+      }
+    }
   }
 
   /**
@@ -412,8 +553,9 @@ export class MibParser {
   /**
    * Determine node kind from syntax and access
    */
-  private determineKind(syntax: string, access: MibAccess): MibNodeKind {
+  private determineKind(syntax: string, access: MibAccess, indexColumns: string[] = []): MibNodeKind {
     if (syntax.includes('SEQUENCE OF')) return 'table'
+    if (indexColumns.length > 0) return 'entry'
     if (syntax === 'SEQUENCE' || syntax.includes('SEQUENCE {')) return 'entry'
     if (access === 'not-accessible' && !syntax.includes('SEQUENCE')) return 'column'
     return 'scalar'
@@ -807,6 +949,77 @@ function collectMibFiles(dirPath: string, extensions: string[]): string[] {
   }
 
   return results
+}
+
+function orderByDependencies(entries: MibModuleIndexEntry[]): MibModuleIndexEntry[] {
+  const byName = new Map(entries.map((entry) => [entry.moduleName, entry]))
+  const ordered: MibModuleIndexEntry[] = []
+  const visiting = new Set<string>()
+  const visited = new Set<string>()
+
+  const visit = (entry: MibModuleIndexEntry): void => {
+    if (visited.has(entry.moduleName)) return
+    if (visiting.has(entry.moduleName)) {
+      // Cycles are legal enough to keep parsing; preserve original cycle order.
+      return
+    }
+
+    visiting.add(entry.moduleName)
+    for (const importedModule of Object.keys(entry.imports)) {
+      const dependency = byName.get(importedModule)
+      if (dependency) visit(dependency)
+    }
+    visiting.delete(entry.moduleName)
+    visited.add(entry.moduleName)
+    ordered.push(entry)
+  }
+
+  for (const entry of entries) {
+    visit(entry)
+  }
+
+  return ordered
+}
+
+function extractSyntaxBase(syntax: string): string {
+  return (syntax || '').split(/[{(]/)[0].trim()
+}
+
+function normalizeMibInlineValue(value: string): string {
+  return value
+    .replace(/\s*\n\s*/g, ' ')
+    .replace(/\s*,\s*/g, ', ')
+    .replace(/\{\s*/g, '{ ')
+    .replace(/\s*\}/g, ' }')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function extractEnumValues(syntax: string): MibNamedValue[] {
+  if (!syntax.includes('{')) return []
+  if (/^\s*BITS\b/i.test(syntax)) return []
+  return extractNamedValues(syntax)
+}
+
+function extractBits(syntax: string): MibNamedValue[] {
+  if (!/^\s*BITS\b/i.test(syntax)) return []
+  return extractNamedValues(syntax)
+}
+
+function extractNamedValues(syntax: string): MibNamedValue[] {
+  const blockMatch = syntax.match(/\{([\s\S]*?)\}/)
+  if (!blockMatch) return []
+
+  const values: MibNamedValue[] = []
+  const valueRegex = /([A-Za-z][A-Za-z0-9-]*)\s*\(\s*(-?\d+)\s*\)/g
+  let match: RegExpExecArray | null
+  while ((match = valueRegex.exec(blockMatch[1])) !== null) {
+    values.push({
+      name: match[1],
+      value: Number(match[2])
+    })
+  }
+  return values
 }
 
 /**
