@@ -2,6 +2,7 @@
 import snmp from 'net-snmp'
 import type { SnmpConfig, SnmpResult, SnmpVarbind, SnmpSetValue, SecurityLevel } from './types'
 import { resolveAuthProtocol, resolvePrivProtocol, resolveSnmpTransport } from './options'
+import { debugError, debugLog } from '../debugLogger'
 
 /**
  * Raw varbind shape returned by net-snmp before formatting.
@@ -25,6 +26,28 @@ type SnmpSession = ReturnType<typeof snmp.createSession>
 
 let currentSession: SnmpSession | null = null
 let abortRequested = false
+
+function logSnmpStart(operation: string, config: SnmpConfig, request: Record<string, unknown>): void {
+  debugLog('snmp', `${operation} start`, {
+    config,
+    request
+  })
+}
+
+function logSnmpFinish(operation: string, result: SnmpResult): void {
+  const context = {
+    success: result.success,
+    aborted: result.aborted === true,
+    responseTime: result.responseTime,
+    varbindCount: result.varbinds.length,
+    error: result.error
+  }
+  if (result.success) {
+    debugLog('snmp', `${operation} finish`, context)
+    return
+  }
+  debugError('snmp', `${operation} failed`, result.error ?? 'Unknown SNMP error', context)
+}
 
 /**
  * Cancel the currently in-flight SNMP operation, if any.
@@ -203,6 +226,7 @@ export function snmpGet(config: SnmpConfig, oids: string[]): Promise<SnmpResult>
   return new Promise((resolve) => {
     const startTime = Date.now()
     let settled = false
+    logSnmpStart('GET', config, { oids })
 
     // Settle helper: clears the global currentSession ref, closes the session
     // exactly once, and resolves the Promise. All resolve paths must go
@@ -220,6 +244,7 @@ export function snmpGet(config: SnmpConfig, oids: string[]): Promise<SnmpResult>
           // Already closed (typical when abort triggered the closure).
         }
       }
+      logSnmpFinish('GET', result)
       resolve(result)
     }
 
@@ -300,6 +325,7 @@ export function snmpGetNext(config: SnmpConfig, oids: string[]): Promise<SnmpRes
   return new Promise((resolve) => {
     const startTime = Date.now()
     let settled = false
+    logSnmpStart('GETNEXT', config, { oids })
 
     const finish = (session: SnmpSession | null, result: SnmpResult): void => {
       if (settled) return
@@ -312,6 +338,7 @@ export function snmpGetNext(config: SnmpConfig, oids: string[]): Promise<SnmpRes
           // Already closed.
         }
       }
+      logSnmpFinish('GETNEXT', result)
       resolve(result)
     }
 
@@ -392,6 +419,11 @@ export function snmpGetBulk(
     let settled = false
     const effectiveMaxRepetitions = maxRepetitions ?? config.bulkMaxRepetitions
     const effectiveNonRepeaters = nonRepeaters ?? config.bulkNonRepeaters
+    logSnmpStart('GETBULK', config, {
+      oids,
+      maxRepetitions: effectiveMaxRepetitions,
+      nonRepeaters: effectiveNonRepeaters
+    })
 
     const finish = (session: SnmpSession | null, result: SnmpResult): void => {
       if (settled) return
@@ -404,6 +436,7 @@ export function snmpGetBulk(
           // Already closed.
         }
       }
+      logSnmpFinish('GETBULK', result)
       resolve(result)
     }
 
@@ -479,6 +512,13 @@ export function snmpSet(config: SnmpConfig, values: SnmpSetValue[]): Promise<Snm
   return new Promise((resolve) => {
     const startTime = Date.now()
     let settled = false
+    logSnmpStart('SET', config, {
+      values: values.map((value) => ({
+        oid: value.oid,
+        type: value.type,
+        value: value.value
+      }))
+    })
 
     const finish = (session: SnmpSession | null, result: SnmpResult): void => {
       if (settled) return
@@ -491,6 +531,7 @@ export function snmpSet(config: SnmpConfig, values: SnmpSetValue[]): Promise<Snm
           // Already closed.
         }
       }
+      logSnmpFinish('SET', result)
       resolve(result)
     }
 
@@ -613,6 +654,7 @@ export function snmpWalk(config: SnmpConfig, rootOid: string): Promise<SnmpResul
     const startTime = Date.now()
     const results: SnmpVarbind[] = []
     let settled = false
+    logSnmpStart('WALK', config, { rootOid })
 
     const finish = (session: SnmpSession | null, result: SnmpResult): void => {
       if (settled) return
@@ -625,6 +667,7 @@ export function snmpWalk(config: SnmpConfig, rootOid: string): Promise<SnmpResul
           // Already closed (e.g. abort triggered the closure).
         }
       }
+      logSnmpFinish('WALK', result)
       resolve(result)
     }
 
@@ -758,6 +801,10 @@ export function snmpBulkWalk(
     const results: SnmpVarbind[] = []
     let settled = false
     const effectiveMaxRepetitions = maxRepetitions ?? config.bulkMaxRepetitions
+    logSnmpStart('BULK_WALK', config, {
+      rootOid,
+      maxRepetitions: effectiveMaxRepetitions
+    })
 
     const finish = (session: SnmpSession | null, result: SnmpResult): void => {
       if (settled) return
@@ -770,6 +817,7 @@ export function snmpBulkWalk(
           // Already closed.
         }
       }
+      logSnmpFinish('BULK_WALK', result)
       resolve(result)
     }
 

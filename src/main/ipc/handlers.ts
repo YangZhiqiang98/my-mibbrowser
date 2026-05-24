@@ -4,6 +4,7 @@ import { MibParser, buildMibTree, resolveOidToName } from '../mib/parser'
 import type { MibParseResult, MibNode, MibModule } from '../mib/types'
 import { snmpGet, snmpGetNext, snmpGetBulk, snmpSet, snmpWalk, snmpBulkWalk, cancelCurrentSnmpOperation } from '../snmp/client'
 import type { SnmpConfig, SnmpResult, SnmpSetValue, SnmpVarbind } from '../snmp/types'
+import { debugLog, isDebugModeEnabled, setDebugMode } from '../debugLogger'
 import { readFileSync, writeFileSync, existsSync, unlinkSync, readdirSync, mkdirSync } from 'fs'
 import { join, basename } from 'path'
 import { createHash } from 'crypto'
@@ -206,9 +207,30 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('profile:load', handleLoadProfiles)
   ipcMain.handle('profile:delete', handleDeleteProfile)
 
+  // Debug mode
+  ipcMain.handle('debug:get-enabled', handleDebugGetEnabled)
+  ipcMain.handle('debug:set-enabled', handleDebugSetEnabled)
+
   // Export
   ipcMain.handle('export:csv', handleExportCsv)
   ipcMain.handle('export:xml', handleExportXml)
+}
+
+function summarizeParseResult(result: MibParseResult): Record<string, unknown> {
+  return {
+    modules: result.modules.map((module) => module.name),
+    moduleCount: result.modules.length,
+    errorCount: result.errors.length,
+    warningCount: result.warnings.length,
+    dependencyWarningCount: result.dependencyWarnings?.length ?? 0,
+    errors: result.errors.map((error) => error.message),
+    warnings: result.warnings,
+    dependencyWarnings: result.dependencyWarnings?.map((warning) => ({
+      module: warning.module,
+      missingModule: warning.missingModule,
+      symbols: warning.symbols
+    })) ?? []
+  }
 }
 
 /**
@@ -234,6 +256,7 @@ async function handleOpenMibFiles(): Promise<MibParseResult> {
     return { modules: [], errors: [], warnings: [], dependencyWarnings: [] }
   }
 
+  debugLog('mib', 'open files start', { fileCount: result.filePaths.length, files: result.filePaths })
   const parseResult = mibParser.parseFiles(result.filePaths)
 
   // "Files" load replaces the prior file-key bucket; other source directories
@@ -255,6 +278,7 @@ async function handleOpenMibFiles(): Promise<MibParseResult> {
     saveCacheForDirectory(fileKey)
   }
 
+  debugLog('mib', 'open files finish', summarizeParseResult(parseResult))
   return parseResult
 }
 
@@ -278,6 +302,7 @@ async function handleOpenMibDirectory(): Promise<MibParseResult> {
   }
 
   const dirPath = result.filePaths[0]
+  debugLog('mib', 'open directory start', { dirPath })
   const parseResult = mibParser.parseDirectory(dirPath)
 
   // Remove only the modules that this directory contributed previously
@@ -298,6 +323,7 @@ async function handleOpenMibDirectory(): Promise<MibParseResult> {
   // Save per-directory cache
   saveCacheForDirectory(dirPath)
 
+  debugLog('mib', 'open directory finish', summarizeParseResult(parseResult))
   return parseResult
 }
 
@@ -309,6 +335,10 @@ function handleLoadMibContent(
   _event: IpcMainInvokeEvent,
   contents: Array<{ name: string; content: string }>
 ): MibParseResult {
+  debugLog('mib', 'load content start', {
+    fileCount: contents.length,
+    files: contents.map((content) => ({ name: content.name, bytes: content.content.length }))
+  })
   const parseResult = mibParser.parseFileContents(contents)
 
   // Drag-and-drop is tracked under a single bucket. Replace prior modules from
@@ -333,6 +363,7 @@ function handleLoadMibContent(
     saveCacheForDirectory(fileKey)
   }
 
+  debugLog('mib', 'load content finish', summarizeParseResult(parseResult))
   return parseResult
 }
 
@@ -407,7 +438,9 @@ function resolveVarbindNames(varbinds: SnmpVarbind[]): SnmpVarbind[] {
  * Execute SNMP GET
  */
 async function handleSnmpGet(_event: IpcMainInvokeEvent, config: SnmpConfig, oids: string[]): Promise<SnmpResult> {
+  debugLog('ipc', 'snmp:get invoke', { config, oids })
   const result = await snmpGet(config, oids)
+  debugLog('ipc', 'snmp:get result', { success: result.success, error: result.error, varbindCount: result.varbinds.length })
   if (result.success) {
     return {
       ...result,
@@ -421,7 +454,9 @@ async function handleSnmpGet(_event: IpcMainInvokeEvent, config: SnmpConfig, oid
  * Execute SNMP GETNEXT
  */
 async function handleSnmpGetNext(_event: IpcMainInvokeEvent, config: SnmpConfig, oids: string[]): Promise<SnmpResult> {
+  debugLog('ipc', 'snmp:get-next invoke', { config, oids })
   const result = await snmpGetNext(config, oids)
+  debugLog('ipc', 'snmp:get-next result', { success: result.success, error: result.error, varbindCount: result.varbinds.length })
   if (result.success) {
     return {
       ...result,
@@ -438,7 +473,9 @@ async function handleSnmpGetBulk(
   _event: IpcMainInvokeEvent, config: SnmpConfig, oids: string[],
   maxRepetitions?: number, nonRepeaters?: number
 ): Promise<SnmpResult> {
+  debugLog('ipc', 'snmp:get-bulk invoke', { config, oids, maxRepetitions, nonRepeaters })
   const result = await snmpGetBulk(config, oids, maxRepetitions, nonRepeaters)
+  debugLog('ipc', 'snmp:get-bulk result', { success: result.success, error: result.error, varbindCount: result.varbinds.length })
   if (result.success) {
     return {
       ...result,
@@ -452,7 +489,9 @@ async function handleSnmpGetBulk(
  * Execute SNMP SET
  */
 async function handleSnmpSet(_event: IpcMainInvokeEvent, config: SnmpConfig, values: SnmpSetValue[]): Promise<SnmpResult> {
+  debugLog('ipc', 'snmp:set invoke', { config, values })
   const result = await snmpSet(config, values)
+  debugLog('ipc', 'snmp:set result', { success: result.success, error: result.error, varbindCount: result.varbinds.length })
   if (result.success) {
     return {
       ...result,
@@ -466,7 +505,9 @@ async function handleSnmpSet(_event: IpcMainInvokeEvent, config: SnmpConfig, val
  * Execute SNMP WALK
  */
 async function handleSnmpWalk(_event: IpcMainInvokeEvent, config: SnmpConfig, oid: string): Promise<SnmpResult> {
+  debugLog('ipc', 'snmp:walk invoke', { config, oid })
   const result = await snmpWalk(config, oid)
+  debugLog('ipc', 'snmp:walk result', { success: result.success, error: result.error, varbindCount: result.varbinds.length })
   if (result.success) {
     return {
       ...result,
@@ -482,7 +523,9 @@ async function handleSnmpWalk(_event: IpcMainInvokeEvent, config: SnmpConfig, oi
 async function handleSnmpBulkWalk(
   _event: IpcMainInvokeEvent, config: SnmpConfig, oid: string, maxRepetitions?: number
 ): Promise<SnmpResult> {
+  debugLog('ipc', 'snmp:bulk-walk invoke', { config, oid, maxRepetitions })
   const result = await snmpBulkWalk(config, oid, maxRepetitions)
+  debugLog('ipc', 'snmp:bulk-walk result', { success: result.success, error: result.error, varbindCount: result.varbinds.length })
   if (result.success) {
     return {
       ...result,
@@ -498,7 +541,24 @@ async function handleSnmpBulkWalk(
  * mechanics.
  */
 function handleSnmpCancel(_event: IpcMainInvokeEvent): boolean {
-  return cancelCurrentSnmpOperation()
+  const cancelled = cancelCurrentSnmpOperation()
+  debugLog('ipc', 'snmp:cancel result', { cancelled })
+  return cancelled
+}
+
+function handleDebugGetEnabled(): boolean {
+  return isDebugModeEnabled()
+}
+
+function handleDebugSetEnabled(_event: IpcMainInvokeEvent, enabled: boolean): boolean {
+  if (!enabled) {
+    debugLog('debug', 'debug mode disabled')
+    setDebugMode(false)
+    return isDebugModeEnabled()
+  }
+  setDebugMode(enabled)
+  debugLog('debug', 'debug mode enabled')
+  return isDebugModeEnabled()
 }
 
 /**

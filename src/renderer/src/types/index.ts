@@ -36,6 +36,10 @@ declare global {
         load: () => Promise<Array<{ id: string; name: string; config: SnmpConfig }>>
         delete: (profileId: string) => Promise<void>
       }
+      debug: {
+        getEnabled: () => Promise<boolean>
+        setEnabled: (enabled: boolean) => Promise<boolean>
+      }
       export: {
         csv: (data: Array<Record<string, unknown>>) => Promise<boolean>
         xml: (data: Array<Record<string, unknown>>) => Promise<boolean>

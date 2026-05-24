@@ -29,6 +29,7 @@ interface AppState {
   // Status
   connectionStatus: 'disconnected' | 'connecting' | 'connected' | 'error'
   statusMessage: string
+  debugMode: boolean
 
   // Actions
   setMibTree: (tree: MibTreeNodeData[]) => void
@@ -46,6 +47,7 @@ interface AppState {
 
   setConnectionStatus: (status: AppState['connectionStatus']) => void
   setStatusMessage: (msg: string) => void
+  setDebugMode: (enabled: boolean) => void
 }
 
 const defaultConfig: SnmpConfig = {
@@ -101,6 +103,7 @@ export const useAppStore = create<AppState>((set) => ({
   profiles: [],
   connectionStatus: 'disconnected',
   statusMessage: 'Ready',
+  debugMode: false,
 
   // MIB actions
   setMibTree: (tree) => set({ mibTree: tree }),
@@ -127,5 +130,6 @@ export const useAppStore = create<AppState>((set) => ({
 
   // Status actions
   setConnectionStatus: (status) => set({ connectionStatus: status }),
-  setStatusMessage: (msg) => set({ statusMessage: msg })
+  setStatusMessage: (msg) => set({ statusMessage: msg }),
+  setDebugMode: (enabled) => set({ debugMode: enabled })
 }))

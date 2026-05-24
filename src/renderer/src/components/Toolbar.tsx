@@ -1,5 +1,5 @@
-import React, { useState, useCallback } from 'react'
-import { Input, Select, InputNumber, Button, Dropdown, Modal, Tooltip, App, Divider } from 'antd'
+import React, { useEffect, useState, useCallback } from 'react'
+import { Input, Select, InputNumber, Button, Dropdown, Modal, Tooltip, App, Divider, Switch } from 'antd'
 import {
   SettingOutlined,
   SaveOutlined,
@@ -27,6 +27,8 @@ export function Toolbar(): React.ReactElement {
   const isQuerying = useAppStore((s) => s.isQuerying)
   const setConnectionStatus = useAppStore((s) => s.setConnectionStatus)
   const setStatusMessage = useAppStore((s) => s.setStatusMessage)
+  const debugMode = useAppStore((s) => s.debugMode)
+  const setDebugMode = useAppStore((s) => s.setDebugMode)
   const [showConnectionSettings, setShowConnectionSettings] = useState(false)
   const [profileName, setProfileName] = useState('')
   const [showSaveModal, setShowSaveModal] = useState(false)
@@ -76,6 +78,27 @@ export function Toolbar(): React.ReactElement {
   const handleVersionChange = (version: string): void => {
     setConfig({ version: version as SnmpConfig['version'] })
   }
+
+  const handleDebugModeChange = async (enabled: boolean): Promise<void> => {
+    const previous = debugMode
+    setDebugMode(enabled)
+    try {
+      const actual = await window.api.debug.setEnabled(enabled)
+      setDebugMode(actual)
+      setStatusMessage(`Debug mode ${actual ? 'enabled' : 'disabled'}`)
+    } catch (error) {
+      setDebugMode(previous)
+      const errMsg = error instanceof Error ? error.message : String(error)
+      message.error(`Debug mode update failed: ${errMsg}`)
+      setStatusMessage(`Debug mode update failed: ${errMsg}`)
+    }
+  }
+
+  useEffect(() => {
+    void window.api.debug.getEnabled()
+      .then(setDebugMode)
+      .catch(() => undefined)
+  }, [setDebugMode])
 
   const handleSaveProfile = async () => {
     if (!profileName.trim()) return
@@ -332,6 +355,15 @@ export function Toolbar(): React.ReactElement {
           <Divider plain>Request</Divider>
 
           <div className="connection-settings-grid">
+            <div className="query-form-item">
+              <label>Debug Mode</label>
+              <Switch
+                checked={debugMode}
+                onChange={(checked) => {
+                  void handleDebugModeChange(checked)
+                }}
+              />
+            </div>
             <div className="query-form-item">
               <label>Timeout (ms)</label>
               <InputNumber

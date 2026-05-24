@@ -53,6 +53,12 @@ const api = {
       ipcRenderer.invoke('profile:delete', profileId)
   },
 
+  // Debug mode
+  debug: {
+    getEnabled: (): Promise<boolean> => ipcRenderer.invoke('debug:get-enabled'),
+    setEnabled: (enabled: boolean): Promise<boolean> => ipcRenderer.invoke('debug:set-enabled', enabled)
+  },
+
   // Export
   export: {
     csv: (data: Array<Record<string, unknown>>): Promise<boolean> =>

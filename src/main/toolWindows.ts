@@ -9,6 +9,7 @@ import type {
   SnmpToolWindowToast,
   ToolWindowMibNode
 } from '../shared/toolWindowTypes'
+import { debugLog } from './debugLogger'
 
 interface ToolWindowEntry {
   window: BrowserWindow
@@ -43,6 +44,13 @@ export function registerToolWindowHandlers(mainWindow: BrowserWindow): void {
 }
 
 function handleOpenToolWindow(_event: IpcMainInvokeEvent, request: SnmpToolWindowOpenRequest): void {
+  debugLog('tool-window', 'open request', {
+    kind: request.kind,
+    seed: request.seed,
+    snmpConfig: request.snmpConfig,
+    mibNodeCount: request.mibTree.length
+  })
+
   const context: SnmpToolWindowContext = {
     kind: request.kind,
     seed: request.seed,
@@ -51,6 +59,7 @@ function handleOpenToolWindow(_event: IpcMainInvokeEvent, request: SnmpToolWindo
   }
 
   if (toolWindowEntry && !toolWindowEntry.window.isDestroyed()) {
+    debugLog('tool-window', 'reuse existing window', { kind: request.kind })
     toolWindowEntry.context = context
     safeShow(toolWindowEntry.window)
     safeFocus(toolWindowEntry.window)
@@ -59,6 +68,7 @@ function handleOpenToolWindow(_event: IpcMainInvokeEvent, request: SnmpToolWindo
   }
 
   const parent = mainWindowRef && !mainWindowRef.isDestroyed() ? mainWindowRef : undefined
+  debugLog('tool-window', 'create window', { kind: request.kind, hasParent: parent !== undefined })
   const toolWindow = new BrowserWindow({
     width: request.kind === 'table' ? 1180 : 980,
     height: request.kind === 'table' ? 720 : 640,
@@ -83,6 +93,7 @@ function handleOpenToolWindow(_event: IpcMainInvokeEvent, request: SnmpToolWindo
   })
 
   toolWindow.on('closed', () => {
+    debugLog('tool-window', 'window closed', { kind: context.kind })
     if (toolWindowEntry?.window === toolWindow) toolWindowEntry = null
     toolWindowWebContentsIds.delete(toolWindowWebContentsId)
   })
@@ -101,19 +112,29 @@ function handleOpenToolWindow(_event: IpcMainInvokeEvent, request: SnmpToolWindo
 }
 
 function handleGetToolWindowContext(event: IpcMainInvokeEvent): SnmpToolWindowContext | null {
+  debugLog('tool-window', 'get context', { senderId: event.sender.id, isToolWindow: toolWindowWebContentsIds.has(event.sender.id) })
   if (!toolWindowWebContentsIds.has(event.sender.id)) return null
   return toolWindowEntry?.context ?? null
 }
 
 function handleUpdateMainResult(_event: IpcMainInvokeEvent, update: SnmpToolWindowResultUpdate): void {
+  debugLog('tool-window', 'update main result', {
+    operation: update.session?.operation,
+    rowCount: update.session?.rows.length ?? 0,
+    connectionStatus: update.connectionStatus,
+    statusMessage: update.statusMessage,
+    isQuerying: update.isQuerying
+  })
   sendToMainWindow('snmp-tool:main-result-update', update)
 }
 
 function handleUpdateMainStatus(_event: IpcMainInvokeEvent, update: SnmpToolWindowStatusUpdate): void {
+  debugLog('tool-window', 'update main status', update)
   sendToMainWindow('snmp-tool:main-status-update', update)
 }
 
 function handleShowMainToast(_event: IpcMainInvokeEvent, toast: SnmpToolWindowToast): void {
+  debugLog('tool-window', 'show main toast', toast)
   sendToMainWindow('snmp-tool:main-toast', toast)
 }
 
