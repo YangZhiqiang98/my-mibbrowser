@@ -1,0 +1,4 @@
+{"file": ".trellis/tasks/05-25-refactor-results-panel-to-tree-list-display/prd.md", "reason": "PRD with acceptance criteria to verify against"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Quality bar for verifying the implementation meets standards"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "Type safety requirements to verify correct typing of refactored data model"}
+{"file": ".trellis/tasks/05-25-refactor-results-panel-to-tree-list-display/research/mib-browser-result-display-patterns.md", "reason": "Reference for verifying the flat list display matches professional MIB browser conventions"}

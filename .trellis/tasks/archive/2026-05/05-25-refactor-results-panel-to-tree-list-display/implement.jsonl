@@ -1,0 +1,6 @@
+{"file": ".trellis/tasks/05-25-refactor-results-panel-to-tree-list-display/prd.md", "reason": "PRD with full requirements, acceptance criteria, and technical approach for the Results Panel refactor"}
+{"file": ".trellis/tasks/05-25-refactor-results-panel-to-tree-list-display/research/mib-browser-result-display-patterns.md", "reason": "Research on how 7 professional MIB browsers display results — flat list patterns and column conventions"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "Component patterns for React components including antd Table usage"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "Type definitions and patterns for SNMP result types that need refactoring"}
+{"file": ".trellis/spec/frontend/mib-tree-snmp-ops.md", "reason": "MIB tree SNMP operations context — how OID resolution works for result display"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Guide on reusing existing utilities (resolveOidToColumn, formatVarbindValue, etc.)"}
