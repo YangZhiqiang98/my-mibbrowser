@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 22
+- **Total Sessions**: 23
 - **Last Active**: 2026-05-25
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~902 | Active |
+| `journal-1.md` | ~935 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 23 | 2026-05-25 | Fix table viewer formatter parity with Results Panel | `8bacdc0` | `main` |
 | 22 | 2026-05-25 | Fix Table Viewer empty result on entry nodes (scalar-kind columns) | `ea097a4` | `main` |
 | 21 | 2026-05-25 | Remove Electron npmrc mirror config | `c51127c` | `main` |
 | 20 | 2026-05-25 | README rewrite | `3d12369` | `main` |

@@ -900,3 +900,36 @@ User reported Table Viewer showed 0 rows / 0 columns when right-clicking on an e
 ### Next Steps
 
 - None - task complete
+
+
+## Session 23: Fix table viewer formatter parity with Results Panel
+
+**Date**: 2026-05-25
+**Task**: Fix table viewer formatter parity with Results Panel
+**Branch**: `main`
+
+### Summary
+
+Aligned Table Viewer value formatting with Results Panel: type-aware formatTableValue() using shared formatBytesToString(), TimeTicks pretty-printing, IpAddress dotted decimal, OCTET STRING UTF-8 decoding with 70% threshold, and HEX/ASCII toggle ported from ResultsPanel.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8bacdc0` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
