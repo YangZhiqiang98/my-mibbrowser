@@ -1,0 +1,6 @@
+{"file": ".trellis/tasks/05-25-fix-table-viewer-formatter-parity-with-results/prd.md", "reason": "PRD with full requirements, acceptance criteria, and technical notes for the formatter parity fix"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "Component patterns for building/modifying React components including the HEX/ASCII toggle"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "Type definitions and patterns for SNMP result types (ResultCell, TableCellData, etc.)"}
+{"file": ".trellis/spec/frontend/mib-tree-snmp-ops.md", "reason": "MIB tree SNMP operations context — how table data flows from SNMP queries to UI"}
+{"file": ".trellis/spec/backend/snmp-guidelines.md", "reason": "SNMP data types and formatting conventions in the main process"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Guide on reusing shared utilities like formatBytesToString instead of duplicating logic"}
