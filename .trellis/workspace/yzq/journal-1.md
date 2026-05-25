@@ -801,3 +801,36 @@ Replaced oversized MIB warning toasts with bounded dismissible diagnostics notif
 ### Next Steps
 
 - None - task complete
+
+
+## Session 20: README rewrite
+
+**Date**: 2026-05-25
+**Task**: README rewrite
+**Branch**: `main`
+
+### Summary
+
+Rewrote README in Chinese to reflect current MIB Browser capabilities, usage, scripts, packaging, diagnostics, debug mode, limitations, and development notes.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3d12369` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
