@@ -933,3 +933,39 @@ Aligned Table Viewer value formatting with Results Panel: type-aware formatTable
 ### Next Steps
 
 - None - task complete
+
+
+## Session 24: Refactor Results Panel to log-style display
+
+**Date**: 2026-05-25
+**Task**: Refactor Results Panel to log-style display
+**Branch**: `main`
+
+### Summary
+
+Replaced pivot table with flat varbind list (ResultVarbind[]), then replaced antd Table with monospace log-style display. Added query start/end markers, error display in red, virtual scrolling for large datasets, row-click selection, and fixed viewport timing bug.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e0a4e32` | (see git log) |
+| `29e4980` | (see git log) |
+| `db17226` | (see git log) |
+| `2a1eebd` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
