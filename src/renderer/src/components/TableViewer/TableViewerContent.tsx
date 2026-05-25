@@ -45,10 +45,12 @@ export function TableViewerContent({ context }: TableViewerContentProps): React.
   const [visibleColumnKeys, setVisibleColumnKeys] = useState<string[]>([])
   const [editingCell, setEditingCell] = useState<EditingCell | null>(null)
   const [savingCell, setSavingCell] = useState(false)
+  const [showHex, setShowHex] = useState<Record<string, boolean>>({})
 
   useEffect(() => {
     setSession(null)
     setFilterText('')
+    setShowHex({})
     if (target) {
       setVisibleColumnKeys(target.columns.map((column) => column.oid))
     }
@@ -150,6 +152,9 @@ export function TableViewerContent({ context }: TableViewerContentProps): React.
             <TableCellView
             cell={cell}
             column={column}
+            rowKey={row.key}
+            showHex={showHex}
+            onToggleHex={(cellKey) => setShowHex((prev) => ({ ...prev, [cellKey]: !prev[cellKey] }))}
             onEdit={() => setEditingCell({ row, column, value: cell?.isError ? '' : cell?.value ?? '' })}
           />
         )
@@ -157,7 +162,7 @@ export function TableViewerContent({ context }: TableViewerContentProps): React.
     }
 
     return cols
-  }, [visibleColumns])
+  }, [visibleColumns, showHex])
 
   const handleCopyRows = useCallback(() => {
     if (!session || filteredRows.length === 0) {
@@ -348,15 +353,50 @@ export function TableViewerContent({ context }: TableViewerContentProps): React.
 function TableCellView({
   cell,
   column,
+  rowKey,
+  showHex,
+  onToggleHex,
   onEdit
 }: {
   cell?: TableCellData
   column: TableColumnMeta
+  rowKey: string
+  showHex: Record<string, boolean>
+  onToggleHex: (cellKey: string) => void
   onEdit: () => void
 }): React.ReactElement {
   const editable = isEditableColumn(column)
   if (!cell) return <span className="table-viewer-empty">-</span>
   if (cell.isError) return <Tag color="red">{cell.errorTag || 'error'}</Tag>
+
+  const isOctet = cell.rawType === 'OCTET STRING'
+  if (isOctet && cell.value.length > 0) {
+    const cellKey = `${rowKey}|${column.key}`
+    const isHexMode = showHex[cellKey]
+    return (
+      <Space size="small">
+        <span className="table-viewer-cell-value">
+          {isHexMode ? toHexDisplay(cell.value) : cell.value}
+        </span>
+        <Tooltip title={isHexMode ? 'Show ASCII' : 'Show Hex'}>
+          <Button
+            type="link"
+            size="small"
+            style={{ padding: 0, fontSize: 11 }}
+            onClick={() => onToggleHex(cellKey)}
+          >
+            {isHexMode ? 'ASCII' : 'HEX'}
+          </Button>
+        </Tooltip>
+        {editable && (
+          <Button type="link" size="small" onClick={onEdit}>
+            Edit
+          </Button>
+        )}
+      </Space>
+    )
+  }
+
   return (
     <Space size="small">
       <span className="table-viewer-cell-value">{cell.value}</span>
@@ -409,4 +449,13 @@ function getEnumOptions(column: TableColumnMeta): Array<{ label: string; value: 
     options.push({ label: `${match[1]} (${match[2]})`, value: match[2] })
   }
   return options
+}
+
+/**
+ * Convert a string to a space-separated hex display for OCTET STRING toggle.
+ */
+function toHexDisplay(str: string): string {
+  return Array.from(str)
+    .map((c) => c.charCodeAt(0).toString(16).padStart(2, '0'))
+    .join(' ')
 }

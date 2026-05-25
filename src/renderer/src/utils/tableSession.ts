@@ -1,6 +1,7 @@
 import type { SnmpSetValue, SnmpVarbind } from '../../../main/snmp/types'
 import type { MibTreeNodeData } from '../types'
 import { buildFullOid, guessSetTypeFromSyntax } from '../components/SetMultiNodeDialog/rowUtils'
+import { formatBytesToString } from './formatBytes'
 
 export interface TableColumnMeta {
   key: string
@@ -125,7 +126,7 @@ export function buildTableSession(target: TableTarget, varbinds: SnmpVarbind[]):
     }
 
     row.cells[column.key] = {
-      value: formatTableValue(vb.value),
+      value: formatTableValue(vb.value, vb.type),
       rawType: vb.type,
       isError: vb.isError,
       errorTag: vb.isError ? (vb.error || vb.type) : undefined
@@ -153,12 +154,17 @@ export function buildTableSetValue(column: TableColumnMeta, instance: string, va
   }
 }
 
-function formatTableValue(value: SnmpVarbind['value']): string {
+function formatTableValue(value: SnmpVarbind['value'], type: string): string {
   if (value === null || value === undefined) return ''
-  if (typeof value === 'object') {
+
+  if (typeof value === 'object' && !Array.isArray(value)) {
     const obj = value as unknown as Record<string, unknown>
     if (obj.type === 'Buffer' && Array.isArray(obj.data)) {
-      return formatBytes(obj.data as number[])
+      return formatBytesToString(obj.data as number[], type)
+    }
+    const maybeBuf = value as Buffer
+    if (typeof maybeBuf.length === 'number' && typeof maybeBuf[0] !== 'undefined') {
+      return formatBytesToString(Array.from(maybeBuf), type)
     }
     try {
       return JSON.stringify(value)
@@ -166,12 +172,16 @@ function formatTableValue(value: SnmpVarbind['value']): string {
       return String(value)
     }
   }
-  return String(value)
-}
 
-function formatBytes(bytes: number[]): string {
-  const text = String.fromCharCode(...bytes)
-  const printable = text.replace(/[\x00-\x08\x0e-\x1f]/g, '')
-  if (printable.length >= text.length * 0.8 && text.length > 0) return text
-  return bytes.map((byte) => byte.toString(16).padStart(2, '0')).join(' ')
+  if (type === 'TimeTicks') {
+    const ticks = Number(value)
+    const days = Math.floor(ticks / 8640000)
+    const hours = Math.floor((ticks % 8640000) / 360000)
+    const minutes = Math.floor((ticks % 360000) / 6000)
+    const seconds = Math.floor((ticks % 6000) / 100)
+    const hundredths = ticks % 100
+    return `${days}d ${hours}h ${minutes}m ${seconds}.${hundredths}s`
+  }
+
+  return String(value)
 }
