@@ -120,7 +120,7 @@ function handleGetToolWindowContext(event: IpcMainInvokeEvent): SnmpToolWindowCo
 function handleUpdateMainResult(_event: IpcMainInvokeEvent, update: SnmpToolWindowResultUpdate): void {
   debugLog('tool-window', 'update main result', {
     operation: update.session?.operation,
-    rowCount: update.session?.rows.length ?? 0,
+    rowCount: update.session?.varbinds.length ?? 0,
     connectionStatus: update.connectionStatus,
     statusMessage: update.statusMessage,
     isQuerying: update.isQuerying

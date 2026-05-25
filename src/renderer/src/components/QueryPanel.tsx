@@ -102,7 +102,7 @@ export function QueryPanel(): React.ReactElement {
           const session = buildResultSession(queryOperation, oids[0] ?? '', result, mibTree)
           setResult(session)
           setStatusMessage(
-            `${queryOperation}: aborted at ${session.rows.length} row(s), ${result.responseTime}ms`
+            `${queryOperation}: aborted at ${session.varbinds.length} row(s), ${result.responseTime}ms`
           )
         } else {
           setConnectionStatus('connected')
@@ -110,9 +110,9 @@ export function QueryPanel(): React.ReactElement {
           setResult(session)
           // PR3 — empty-result status text suffix so the status bar surfaces
           // "no data" without resorting to a modal / toast.
-          const baseMsg = `${queryOperation}: ${session.rows.length} result(s), ${result.responseTime}ms`
+          const baseMsg = `${queryOperation}: ${session.varbinds.length} result(s), ${result.responseTime}ms`
           setStatusMessage(
-            session.rows.length === 0 ? `${baseMsg} — 本次操作结果为空` : baseMsg
+            session.varbinds.length === 0 ? `${baseMsg} — 本次操作结果为空` : baseMsg
           )
         }
       } else {

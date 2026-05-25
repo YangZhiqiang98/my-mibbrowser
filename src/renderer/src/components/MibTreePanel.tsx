@@ -399,7 +399,7 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
           const session = buildResultSession(operation, oid, result, mibTree)
           setResult(session)
           setStatusMessage(
-            `${operation}: aborted at ${session.rows.length} row(s), ${result.responseTime}ms`
+            `${operation}: aborted at ${session.varbinds.length} row(s), ${result.responseTime}ms`
           )
         } else {
           setConnectionStatus('connected')
@@ -407,9 +407,9 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
           setResult(session)
           // PR3 — append "本次操作结果为空" when the response carried zero rows so
           // the status bar / message line surfaces the empty case without a popup.
-          const baseMsg = `${operation}: ${session.rows.length} result(s), ${result.responseTime}ms`
+          const baseMsg = `${operation}: ${session.varbinds.length} result(s), ${result.responseTime}ms`
           setStatusMessage(
-            session.rows.length === 0 ? `${baseMsg} — 本次操作结果为空` : baseMsg
+            session.varbinds.length === 0 ? `${baseMsg} — 本次操作结果为空` : baseMsg
           )
         }
       } else {

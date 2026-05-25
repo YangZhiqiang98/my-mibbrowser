@@ -26,33 +26,32 @@ export interface ToolWindowSetSeed {
   targetValue?: string
 }
 
-export interface ToolWindowResultCell {
+/**
+ * A single varbind row in the flat-list results display, used for IPC between
+ * the tool window and the main window.
+ */
+export interface ToolWindowResultVarbind {
+  key: string
+  index: number
+  oid: string
+  columnName: string
+  instance: string
+  type: string
   value: string
   rawType: string
   isError: boolean
   errorTag?: string
 }
 
-export interface ToolWindowResultColumn {
-  key: string
-  name: string
-  type: string
-  oidPrefix: string
-}
-
-export interface ToolWindowResultRowData {
-  key: string
-  instance: string
-  cells: Record<string, ToolWindowResultCell>
-}
-
+/**
+ * A complete SNMP operation result for IPC, structured as a flat varbind list.
+ */
 export interface ToolWindowResultSession {
   operation: SnmpOperation
   rootOid: string
   timestamp: number
   responseTime: number
-  columns: ToolWindowResultColumn[]
-  rows: ToolWindowResultRowData[]
+  varbinds: ToolWindowResultVarbind[]
   error?: string
 }
 

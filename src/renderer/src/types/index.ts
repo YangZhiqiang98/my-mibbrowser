@@ -62,61 +62,46 @@ declare global {
 }
 
 /**
- * A single cell in the dynamic-column results table.
+ * A single varbind row in the flat-list results display.
  *
- * `value` is the already-formatted display text (Buffer decoding / TimeTicks
- * pretty-printing has already been applied). `rawType` is the SNMP type tag
- * from the varbind (Counter32, OCTET STRING, ...). When the varbind is an
- * SNMP-level error (noSuchObject / noSuchInstance / endOfMibView), `isError`
- * is true and `errorTag` carries the error name.
+ * Each row represents one variable binding from an SNMP response, displayed
+ * as a flat sequential list (one row per varbind).
  */
-export interface ResultCell {
+export interface ResultVarbind {
+  /** Unique key (typically the OID string) */
+  key: string
+  /** Sequential 1-based index */
+  index: number
+  /** Full OID of this varbind */
+  oid: string
+  /** Resolved MIB node name (e.g., 'sysDescr') */
+  columnName: string
+  /** Instance suffix after the MIB node OID (e.g., '0' or '1.2') */
+  instance: string
+  /** SNMP type display label (e.g., 'OCTET STRING', 'TimeTicks') */
+  type: string
+  /** Formatted display value */
   value: string
+  /** Raw SNMP type tag for HEX toggle detection */
   rawType: string
+  /** True for error varbinds (noSuchObject, noSuchInstance, endOfMibView) */
   isError: boolean
+  /** Error name when isError is true */
   errorTag?: string
 }
 
 /**
- * Column metadata in a dynamic-column result session.
+ * A complete SNMP operation result, structured as a flat varbind list.
  *
- * `key` uniquely identifies the column (typically the MIB node OID matched
- * by longest-prefix, or an OID prefix derived from the varbind when no MIB
- * match is found). `type` is the SNMP type tag used for the header label.
- * When multiple varbinds in the same column carry different types, the first
- * one observed wins.
- */
-export interface ResultColumn {
-  key: string
-  name: string
-  type: string
-  oidPrefix: string
-}
-
-/**
- * A single row in a dynamic-column result session, keyed by instance suffix
- * (the OID segments left over after stripping the column prefix).
- */
-export interface ResultRowData {
-  key: string
-  instance: string
-  cells: Record<string, ResultCell>
-}
-
-/**
- * A complete SNMP operation result, structured as a dynamic table.
- *
- * Columns are listed in first-observed order. Rows are listed in instance
- * order (compound keys compared as strings). Both are derived from the
- * varbinds returned by a single SNMP operation.
+ * Each varbind from the response becomes one row in the display, preserving
+ * the original ordering from the SNMP response.
  */
 export interface ResultSession {
   operation: SnmpOperation
   rootOid: string
   timestamp: number
   responseTime: number
-  columns: ResultColumn[]
-  rows: ResultRowData[]
+  varbinds: ResultVarbind[]
   error?: string
 }
 

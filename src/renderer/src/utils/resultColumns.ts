@@ -1,19 +1,16 @@
 import type {
   MibTreeNodeData,
-  ResultCell,
-  ResultColumn,
-  ResultRowData,
-  ResultSession
+  ResultSession,
+  ResultVarbind
 } from '../types'
-import type { SnmpOperation, SnmpResult, SnmpVarbind } from '../../../main/snmp/types'
+import type { SnmpOperation, SnmpResult } from '../../../main/snmp/types'
 import { formatBytesToString } from './formatBytes'
 
 /**
  * Result of resolving a varbind OID against the MIB tree to identify the
- * (column, instance) pair the cell belongs to.
+ * column name and instance suffix.
  */
-export interface ResolvedColumn {
-  columnKey: string
+interface ResolvedColumn {
   columnName: string
   oidPrefix: string
   instance: string
@@ -38,7 +35,7 @@ function isOidWithinPrefix(oid: string, prefix: string): boolean {
 /**
  * Compute the instance suffix of `oid` relative to `prefix`. If oid === prefix
  * the instance is the empty string. Caller should normalize empty instance
- * downstream (e.g. fall back to '0' or 'value' for scalar GETs).
+ * downstream (e.g. fall back to '0' for scalar GETs).
  */
 function suffixAfterPrefix(oid: string, prefix: string): string {
   if (oid === prefix) return ''
@@ -76,19 +73,17 @@ function flattenMibTree(mibTree: readonly MibTreeNodeData[]): Array<{ oid: strin
 }
 
 /**
- * Resolve a varbind OID into a (column, instance) tuple.
+ * Resolve a varbind OID into a (columnName, instance) tuple.
  *
  * Strategy:
  * 1. Longest-prefix match against the MIB tree using dot-segment boundaries.
- *    On a hit, columnKey = node.oid, columnName = node.name, instance =
- *    suffix after the matched node.
- * 2. On miss, fall back to splitting the OID at the last dot: column =
- *    everything before, columnName = the last-but-one segment (best label
- *    we can guess), instance = the final segment.
- * 3. Single-segment OIDs (rare) collapse to an empty column key and the
+ *    On a hit, columnName = node.name, instance = suffix after the matched node.
+ * 2. On miss, fall back to splitting the OID at the last dot: columnName =
+ *    the last-but-one segment (best label we can guess), instance = the final segment.
+ * 3. Single-segment OIDs (rare) collapse to an empty column name and the
  *    whole OID as instance.
  */
-export function resolveOidToColumn(
+function resolveOidToColumn(
   varbindOid: string,
   flattened: ReadonlyArray<{ oid: string; node: MibTreeNodeData }>
 ): ResolvedColumn {
@@ -98,7 +93,6 @@ export function resolveOidToColumn(
     if (isOidWithinPrefix(oid, entry.oid)) {
       const instance = suffixAfterPrefix(oid, entry.oid)
       return {
-        columnKey: entry.oid,
         columnName: entry.node.name || entry.oid.split('.').pop() || entry.oid,
         oidPrefix: entry.oid,
         instance: instance.length > 0 ? instance : '0'
@@ -110,7 +104,6 @@ export function resolveOidToColumn(
   const lastDot = oid.lastIndexOf('.')
   if (lastDot < 0) {
     return {
-      columnKey: '',
       columnName: '?',
       oidPrefix: '',
       instance: oid
@@ -122,7 +115,6 @@ export function resolveOidToColumn(
   const columnName = labelDot >= 0 ? prefix.slice(labelDot + 1) : prefix
 
   return {
-    columnKey: prefix,
     columnName,
     oidPrefix: prefix,
     instance
@@ -134,7 +126,7 @@ export function resolveOidToColumn(
  * Buffers (which arrive as { type: 'Buffer', data: number[] }) and pretty-
  * printing TimeTicks.
  */
-function formatVarbindValue(value: SnmpVarbind['value'], type: string): string {
+function formatVarbindValue(value: SnmpResult['varbinds'][number]['value'], type: string): string {
   if (value === null || value === undefined) return ''
 
   if (typeof value === 'object' && !Array.isArray(value)) {
@@ -167,36 +159,14 @@ function formatVarbindValue(value: SnmpVarbind['value'], type: string): string {
 }
 
 /**
- * Compare two instance strings using natural OID ordering when both are
- * dotted-numeric, falling back to plain string compare otherwise.
- */
-function compareInstances(a: string, b: string): number {
-  const aParts = a.split('.')
-  const bParts = b.split('.')
-  const allNumericA = aParts.every((p) => /^\d+$/.test(p))
-  const allNumericB = bParts.every((p) => /^\d+$/.test(p))
-  if (allNumericA && allNumericB) {
-    const n = Math.min(aParts.length, bParts.length)
-    for (let i = 0; i < n; i++) {
-      const ai = Number(aParts[i])
-      const bi = Number(bParts[i])
-      if (ai !== bi) return ai - bi
-    }
-    return aParts.length - bParts.length
-  }
-  return a.localeCompare(b)
-}
-
-/**
- * Build a ResultSession from a raw SNMP response by classifying each varbind
- * into a (column, instance) pair via the MIB tree.
+ * Build a ResultSession from a raw SNMP response by mapping each varbind
+ * into a flat list row with MIB name resolution and type-aware formatting.
  *
- * - Columns are listed in first-observed order.
- * - Rows are listed in instance order (numeric-aware when applicable).
+ * - Each varbind becomes one row in `varbinds`, preserving the original
+ *   response order.
+ * - OID-to-name resolution uses longest-prefix MIB matching.
  * - SNMP-level error varbinds (noSuchObject / noSuchInstance / endOfMibView)
- *   are kept in the table with isError=true and the error name in errorTag,
- *   so the UI can render an inline error indicator instead of silently
- *   dropping rows.
+ *   are kept with isError=true and the error name in errorTag.
  */
 export function buildResultSession(
   operation: SnmpOperation,
@@ -205,11 +175,6 @@ export function buildResultSession(
   mibTree: readonly MibTreeNodeData[]
 ): ResultSession {
   const flattened = flattenMibTree(mibTree)
-
-  const columnOrder: string[] = []
-  const columnsByKey = new Map<string, ResultColumn>()
-  const rowOrder: string[] = []
-  const rowsByKey = new Map<string, ResultRowData>()
 
   // Filter varbinds to only include those within the rootOid subtree.
   // Raw GETBULK returns "next" OIDs that may cross into unrelated tables.
@@ -222,48 +187,29 @@ export function buildResultSession(
     return oid === rootOidNorm || oid.startsWith(rootOidNorm + '.')
   })
 
-  for (const vb of filteredVarbinds) {
+  const varbinds: ResultVarbind[] = filteredVarbinds.map((vb, i) => {
     const resolved = resolveOidToColumn(vb.oid, flattened)
-    const { columnKey, columnName, oidPrefix, instance } = resolved
-
-    // Register column on first sighting; later occurrences keep the original
-    // type label even if downstream varbinds carry a different SNMP type.
-    if (!columnsByKey.has(columnKey)) {
-      columnsByKey.set(columnKey, {
-        key: columnKey,
-        name: columnName,
-        type: vb.type,
-        oidPrefix
-      })
-      columnOrder.push(columnKey)
-    }
-
-    const rowKey = instance
-    let row = rowsByKey.get(rowKey)
-    if (!row) {
-      row = { key: rowKey, instance, cells: {} }
-      rowsByKey.set(rowKey, row)
-      rowOrder.push(rowKey)
-    }
-
-    const cell: ResultCell = {
-      value: formatVarbindValue(vb.value, vb.type),
+    const isError = vb.isError
+    return {
+      key: normalizeOid(vb.oid),
+      index: i + 1,
+      oid: normalizeOid(vb.oid),
+      columnName: resolved.columnName,
+      instance: resolved.instance,
+      type: vb.type,
+      value: isError ? '' : formatVarbindValue(vb.value, vb.type),
       rawType: vb.type,
-      isError: vb.isError,
-      errorTag: vb.isError ? (vb.error || vb.type) : undefined
+      isError,
+      errorTag: isError ? (vb.error || vb.type) : undefined
     }
-    row.cells[columnKey] = cell
-  }
-
-  rowOrder.sort(compareInstances)
+  })
 
   return {
     operation,
     rootOid,
     timestamp: response.timestamp,
     responseTime: response.responseTime,
-    columns: columnOrder.map((k) => columnsByKey.get(k)!),
-    rows: rowOrder.map((k) => rowsByKey.get(k)!),
+    varbinds,
     error: response.success ? undefined : response.error
   }
 }

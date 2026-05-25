@@ -12,8 +12,8 @@ export function StatusBar(): React.ReactElement {
   const isQuerying = useAppStore((s) => s.isQuerying)
   const setStatusMessage = useAppStore((s) => s.setStatusMessage)
 
-  const resultsCount = currentResult?.rows.length ?? 0
-  const isEmptyResultSession = currentResult !== null && currentResult.rows.length === 0
+  const resultsCount = currentResult?.varbinds.length ?? 0
+  const isEmptyResultSession = currentResult !== null && currentResult.varbinds.length === 0
 
   const handleAbort = async (): Promise<void> => {
     const cancelled = await window.api.snmp.cancel()

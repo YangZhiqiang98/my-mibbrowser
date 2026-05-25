@@ -204,13 +204,13 @@ export function SetToolWindowContent({ context }: SetToolWindowContentProps): Re
         const session: ResultSession = buildResultSession('GET', oids[0], result, context.mibTree as MibTreeNodeData[])
         if (result.aborted) {
           publishResultToMain(session, {
-            statusMessage: `GET: aborted at ${session.rows.length} row(s), ${result.responseTime}ms`
+            statusMessage: `GET: aborted at ${session.varbinds.length} row(s), ${result.responseTime}ms`
           })
         } else {
-          const baseMessage = `GET: ${session.rows.length} result(s), ${result.responseTime}ms`
+          const baseMessage = `GET: ${session.varbinds.length} result(s), ${result.responseTime}ms`
           publishResultToMain(session, {
             connectionStatus: 'connected',
-            statusMessage: session.rows.length === 0 ? `${baseMessage} — 本次操作结果为空` : baseMessage
+            statusMessage: session.varbinds.length === 0 ? `${baseMessage} — 本次操作结果为空` : baseMessage
           })
           publishToastToMain('success', `GET succeeded (${oids.length} OID${oids.length > 1 ? 's' : ''})`)
         }
@@ -261,13 +261,13 @@ export function SetToolWindowContent({ context }: SetToolWindowContentProps): Re
         const session: ResultSession = buildResultSession('SET', values[0].oid, result, context.mibTree as MibTreeNodeData[])
         if (result.aborted) {
           publishResultToMain(session, {
-            statusMessage: `SET: aborted at ${session.rows.length} row(s), ${result.responseTime}ms`
+            statusMessage: `SET: aborted at ${session.varbinds.length} row(s), ${result.responseTime}ms`
           })
         } else {
-          const baseMessage = `SET: ${session.rows.length} result(s), ${result.responseTime}ms`
+          const baseMessage = `SET: ${session.varbinds.length} result(s), ${result.responseTime}ms`
           publishResultToMain(session, {
             connectionStatus: 'connected',
-            statusMessage: session.rows.length === 0 ? `${baseMessage} — 本次操作结果为空` : baseMessage
+            statusMessage: session.varbinds.length === 0 ? `${baseMessage} — 本次操作结果为空` : baseMessage
           })
           publishToastToMain('success', `SET succeeded (${values.length} varbind${values.length > 1 ? 's' : ''})`)
         }
