@@ -834,3 +834,36 @@ Rewrote README in Chinese to reflect current MIB Browser capabilities, usage, sc
 ### Next Steps
 
 - None - task complete
+
+
+## Session 21: Remove Electron npmrc mirror config
+
+**Date**: 2026-05-25
+**Task**: Remove Electron npmrc mirror config
+**Branch**: `main`
+
+### Summary
+
+Removed Electron-specific mirror settings from .npmrc and updated README install guidance to describe only the npm registry mirror. Verified npm lint runs without the Electron unknown-config warnings.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `c51127c` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

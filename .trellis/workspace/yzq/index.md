@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 20
+- **Total Sessions**: 21
 - **Last Active**: 2026-05-25
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~836 | Active |
+| `journal-1.md` | ~869 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 21 | 2026-05-25 | Remove Electron npmrc mirror config | `c51127c` | `main` |
 | 20 | 2026-05-25 | README rewrite | `3d12369` | `main` |
 | 19 | 2026-05-25 | MIB warning display | `5b28db0` | `main` |
 | 18 | 2026-05-25 | Debug mode logging | `b88d12e` | `main` |
