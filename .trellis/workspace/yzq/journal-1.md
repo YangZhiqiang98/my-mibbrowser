@@ -867,3 +867,36 @@ Removed Electron-specific mirror settings from .npmrc and updated README install
 ### Next Steps
 
 - None - task complete
+
+
+## Session 22: Fix Table Viewer empty result on entry nodes (scalar-kind columns)
+
+**Date**: 2026-05-25
+**Task**: Fix Table Viewer empty result on entry nodes (scalar-kind columns)
+**Branch**: `main`
+
+### Summary
+
+User reported Table Viewer showed 0 rows / 0 columns when right-clicking on an entry node (e.g. 1.3.6.1.4.1.8886.15.1.4.1.1.1.1). Root cause: MIB parser determineKind classifies any column with MAX-ACCESS != not-accessible as kind='scalar' (only INDEX columns get kind='column'); both resolveTableTarget (Table Viewer) and resolveBulkOids (GETBULK fan-out) filtered entry children by kind === 'column' and silently dropped every readable data column. Fix: extracted shared isTableColumnChild predicate in tableSession.ts, routed both surfaces through it, exported resolveBulkOids for testability, added unit tests covering scalar-only / mixed / no-OID / fallback paths. Spec updates: new top-level Gotcha in mib-tree-snmp-ops.md documenting the parser's read-* -> 'scalar' classification quirk; new Same-Shape Filters Across Surfaces Gotcha in code-reuse-thinking-guide.md citing this incident. Followup queued: user identified a separate Table Viewer formatter bug (HEX displayed wrong, empty values shown as {}) caused by tableSession.ts having its own formatTableValue / formatBytes copies that drifted from resultColumns.ts:formatVarbindValue + formatBytes.ts — same spec violation pattern as the resolveBulkOids one. To be addressed in a new task.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `ea097a4` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
