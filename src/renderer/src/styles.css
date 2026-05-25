@@ -385,6 +385,21 @@ html, body, #root {
   min-height: 60px;
 }
 
+.results-log-error-banner {
+  padding: 4px 0;
+}
+
+.results-log-footer {
+  color: #999;
+  padding-top: 4px;
+  user-select: none;
+}
+
+.log-footer-text {
+  font-size: 12px;
+  letter-spacing: 0.3px;
+}
+
 /* Node detail panel */
 .node-detail {
   border-top: 1px solid #e8e8e8;

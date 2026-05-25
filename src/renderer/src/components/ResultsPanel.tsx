@@ -239,7 +239,7 @@ export function ResultsPanel(): React.ReactElement {
           </div>
         )}
 
-        {!isQuerying && rowCount === 0 && (
+        {!isQuerying && rowCount === 0 && !session?.error && (
           <div className="results-log-empty">
             {session ? (
               <Empty
@@ -255,44 +255,61 @@ export function ResultsPanel(): React.ReactElement {
           </div>
         )}
 
-        {!isQuerying && rowCount > 0 && (
+        {!isQuerying && (rowCount > 0 || session?.error) && (
           <>
             <div className="results-log-header" onClick={selectAll} title="Click to select all rows">
               <span className="log-header-text">***** SNMP QUERY STARTED *****</span>
             </div>
-            <div style={{ position: 'relative', height: totalHeight }}>
-              <div style={{ position: 'absolute', top: offsetY, left: 0, right: 0 }}>
-                {visibleVarbinds.map((vb) => (
-                  <div
-                    key={vb.key}
-                    className={`results-log-row ${selectedKeys.has(vb.key) ? 'selected' : ''} ${vb.isError ? 'error-row' : ''}`}
-                    onClick={() => toggleSelect(vb.key)}
-                  >
-                    <span className="log-index">{vb.index}:</span>{' '}
-                    <span className="log-oid">{vb.columnName}.{vb.instance}</span>{' '}
-                    <span className="log-type">({vb.type.toLowerCase()})</span>{' '}
-                    <span className="log-value">
-                      {vb.isError ? (
-                        <span className="log-error">{vb.errorTag || 'error'}</span>
-                      ) : vb.rawType === 'OCTET STRING' && vb.value.length > 0 ? (
-                        <OCTETSTRINGCell
-                          value={vb.value}
-                          isHex={!!showHex[vb.key]}
-                          onToggle={() =>
-                            setShowHex((prev) => ({
-                              ...prev,
-                              [vb.key]: !prev[vb.key]
-                            }))
-                          }
-                        />
-                      ) : (
-                        vb.value
-                      )}
-                    </span>
-                  </div>
-                ))}
+
+            {session?.error && (
+              <div className="results-log-error-banner">
+                <span className="log-error">***** ERROR: {session.error} *****</span>
               </div>
-            </div>
+            )}
+
+            {rowCount > 0 && (
+              <div style={{ position: 'relative', height: totalHeight }}>
+                <div style={{ position: 'absolute', top: offsetY, left: 0, right: 0 }}>
+                  {visibleVarbinds.map((vb) => (
+                    <div
+                      key={vb.key}
+                      className={`results-log-row ${selectedKeys.has(vb.key) ? 'selected' : ''} ${vb.isError ? 'error-row' : ''}`}
+                      onClick={() => toggleSelect(vb.key)}
+                    >
+                      <span className="log-index">{vb.index}:</span>{' '}
+                      <span className="log-oid">{vb.columnName}.{vb.instance}</span>{' '}
+                      <span className="log-type">({vb.type.toLowerCase()})</span>{' '}
+                      <span className="log-value">
+                        {vb.isError ? (
+                          <span className="log-error">{vb.errorTag || 'error'}</span>
+                        ) : vb.rawType === 'OCTET STRING' && vb.value.length > 0 ? (
+                          <OCTETSTRINGCell
+                            value={vb.value}
+                            isHex={!!showHex[vb.key]}
+                            onToggle={() =>
+                              setShowHex((prev) => ({
+                                ...prev,
+                                [vb.key]: !prev[vb.key]
+                              }))
+                            }
+                          />
+                        ) : (
+                          vb.value
+                        )}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {!isQuerying && (rowCount > 0 || session?.error) && (
+              <div className="results-log-footer">
+                <span className="log-footer-text">
+                  ***** SNMP QUERY COMPLETED ({rowCount} results, {session?.responseTime ?? 0}ms) *****
+                </span>
+              </div>
+            )}
           </>
         )}
       </div>
