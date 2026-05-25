@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import { Table, Button, Space, Tooltip, Tag, message, Empty } from 'antd'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Button, Space, Tooltip, message, Empty, Spin } from 'antd'
 import {
   DownloadOutlined,
   FileExcelOutlined,
@@ -7,31 +7,17 @@ import {
   CopyOutlined,
   FileTextOutlined
 } from '@ant-design/icons'
-import type { ColumnsType } from 'antd/es/table'
 import { useAppStore } from '../stores/appStore'
 import type { ResultVarbind } from '../types'
-import { ResizableHeaderCell } from './ResizableHeaderCell'
 
-const INDEX_COL_KEY = '#'
-const NAME_COL_KEY = 'name'
-const INSTANCE_COL_KEY = 'instance'
-const TYPE_COL_KEY = 'type'
-const VALUE_COL_KEY = 'value'
-
-const DEFAULT_WIDTHS: Record<string, number> = {
-  [INDEX_COL_KEY]: 60,
-  [NAME_COL_KEY]: 200,
-  [INSTANCE_COL_KEY]: 100,
-  [TYPE_COL_KEY]: 120,
-  [VALUE_COL_KEY]: 300
-}
-
-const VIRTUAL_SCROLL_THRESHOLD = 500
+const LINE_HEIGHT = 22 // approximate px per log row (font-size 13px, line-height 1.6, + 1px padding)
+const OVERSCAN = 10 // rows rendered above/below the visible viewport
+const HEADER_HEIGHT = 23 // approximate height of the log header line (font 12px * 1.6 + 4px padding)
 
 /**
- * ResultsPanel renders the SNMP operation output as a flat list with one row
- * per varbind. Columns are fixed: #, Name, Instance, Type, Value.
- * Layout features (column width) are local UI state and not persisted.
+ * ResultsPanel renders SNMP operation output as a monospace log-style display.
+ * Each varbind is shown as one line: `序号: 列名称.instance (类型) 值`.
+ * Row click toggles selection. Toolbar buttons for copy/export remain.
  */
 export function ResultsPanel(): React.ReactElement {
   const session = useAppStore((s) => s.currentResult)
@@ -39,150 +25,79 @@ export function ResultsPanel(): React.ReactElement {
   const setResult = useAppStore((s) => s.setResult)
   const setStatusMessage = useAppStore((s) => s.setStatusMessage)
 
-  const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([])
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set())
   const [showHex, setShowHex] = useState<Record<string, boolean>>({})
-  const [columnWidths, setColumnWidths] = useState<Record<string, number>>({})
+
+  // Virtual scroll state
+  const [scrollTop, setScrollTop] = useState(0)
+  const [viewportHeight, setViewportHeight] = useState(0)
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
 
   // Reset selection and hex state whenever a new session arrives.
   useEffect(() => {
-    setSelectedRowKeys([])
+    setSelectedKeys(new Set())
     setShowHex({})
   }, [session])
+
+  // Track scroll container dimensions and scroll position.
+  useEffect(() => {
+    const el = scrollContainerRef.current
+    if (!el) return
+
+    const handleScroll = (): void => {
+      setScrollTop(el.scrollTop)
+    }
+
+    const handleResize = (): void => {
+      setViewportHeight(el.clientHeight)
+    }
+
+    handleResize()
+    el.addEventListener('scroll', handleScroll, { passive: true })
+
+    const observer = new ResizeObserver(handleResize)
+    observer.observe(el)
+
+    return () => {
+      el.removeEventListener('scroll', handleScroll)
+      observer.disconnect()
+    }
+  }, [])
 
   const varbinds = session?.varbinds ?? []
   const rowCount = varbinds.length
 
-  const handleResize = useCallback((key: string, newWidth: number) => {
-    setColumnWidths((prev) => ({ ...prev, [key]: newWidth }))
+  // Virtual windowing: compute which rows are visible.
+  // Rows start after the header, so we offset the scroll position by HEADER_HEIGHT.
+  const [startIndex, endIndex, totalHeight, offsetY] = useMemo(() => {
+    const total = rowCount * LINE_HEIGHT
+    const adjustedScroll = Math.max(0, scrollTop - HEADER_HEIGHT)
+    const start = Math.max(0, Math.floor(adjustedScroll / LINE_HEIGHT) - OVERSCAN)
+    const visibleCount = Math.ceil(viewportHeight / LINE_HEIGHT) + OVERSCAN * 2
+    const end = Math.min(rowCount, start + visibleCount)
+    return [start, end, total, start * LINE_HEIGHT]
+  }, [scrollTop, viewportHeight, rowCount])
+
+  const visibleVarbinds = useMemo(
+    () => varbinds.slice(startIndex, endIndex),
+    [varbinds, startIndex, endIndex]
+  )
+
+  const toggleSelect = useCallback((key: string) => {
+    setSelectedKeys((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) {
+        next.delete(key)
+      } else {
+        next.add(key)
+      }
+      return next
+    })
   }, [])
 
-  const getWidth = useCallback((key: string): number => {
-    return columnWidths[key] ?? DEFAULT_WIDTHS[key] ?? 160
-  }, [columnWidths])
-
-  const columns: ColumnsType<ResultVarbind> = useMemo(() => {
-    const cols: ColumnsType<ResultVarbind> = [
-      {
-        title: '#',
-        dataIndex: 'index',
-        key: INDEX_COL_KEY,
-        width: getWidth(INDEX_COL_KEY),
-        align: 'right',
-        render: (index: number) => (
-          <span style={{ fontSize: 12 }}>{index}</span>
-        ),
-        onHeaderCell: () => ({
-          columnKey: INDEX_COL_KEY,
-          width: getWidth(INDEX_COL_KEY),
-          onResize: handleResize,
-          draggable: false
-        }) as unknown as React.HTMLAttributes<HTMLElement>
-      },
-      {
-        title: '列名称',
-        dataIndex: 'columnName',
-        key: NAME_COL_KEY,
-        width: getWidth(NAME_COL_KEY),
-        ellipsis: true,
-        render: (name: string) => (
-          <span style={{ fontFamily: 'monospace', fontSize: 12 }}>{name}</span>
-        ),
-        onHeaderCell: () => ({
-          columnKey: NAME_COL_KEY,
-          width: getWidth(NAME_COL_KEY),
-          onResize: handleResize,
-          draggable: false
-        }) as unknown as React.HTMLAttributes<HTMLElement>
-      },
-      {
-        title: 'Instance',
-        dataIndex: 'instance',
-        key: INSTANCE_COL_KEY,
-        width: getWidth(INSTANCE_COL_KEY),
-        ellipsis: true,
-        render: (instance: string) => (
-          <span style={{ fontFamily: 'monospace', fontSize: 12 }}>{instance}</span>
-        ),
-        onHeaderCell: () => ({
-          columnKey: INSTANCE_COL_KEY,
-          width: getWidth(INSTANCE_COL_KEY),
-          onResize: handleResize,
-          draggable: false
-        }) as unknown as React.HTMLAttributes<HTMLElement>
-      },
-      {
-        title: '类型',
-        dataIndex: 'type',
-        key: TYPE_COL_KEY,
-        width: getWidth(TYPE_COL_KEY),
-        ellipsis: true,
-        render: (type: string) => (
-          <span style={{ fontSize: 12 }}>{type}</span>
-        ),
-        onHeaderCell: () => ({
-          columnKey: TYPE_COL_KEY,
-          width: getWidth(TYPE_COL_KEY),
-          onResize: handleResize,
-          draggable: false
-        }) as unknown as React.HTMLAttributes<HTMLElement>
-      },
-      {
-        title: '值',
-        dataIndex: 'value',
-        key: VALUE_COL_KEY,
-        width: getWidth(VALUE_COL_KEY),
-        ellipsis: true,
-        render: (_value: string, record) => {
-          if (record.isError) {
-            return <Tag color="red">{record.errorTag || 'error'}</Tag>
-          }
-          const isOctet = record.rawType === 'OCTET STRING'
-          if (isOctet && record.value.length > 0) {
-            const isHexMode = showHex[record.key]
-            return (
-              <Space size="small">
-                <span style={{ fontFamily: 'monospace', fontSize: 12 }}>
-                  {isHexMode ? toHexDisplay(record.value) : record.value}
-                </span>
-                <Tooltip title={isHexMode ? 'Show ASCII' : 'Show Hex'}>
-                  <Button
-                    type="link"
-                    size="small"
-                    style={{ padding: 0, fontSize: 11 }}
-                    onClick={() =>
-                      setShowHex((prev) => ({ ...prev, [record.key]: !prev[record.key] }))
-                    }
-                  >
-                    {isHexMode ? 'ASCII' : 'HEX'}
-                  </Button>
-                </Tooltip>
-              </Space>
-            )
-          }
-          return <span style={{ fontFamily: 'monospace', fontSize: 12 }}>{record.value}</span>
-        },
-        onHeaderCell: () => ({
-          columnKey: VALUE_COL_KEY,
-          width: getWidth(VALUE_COL_KEY),
-          onResize: handleResize,
-          draggable: false
-        }) as unknown as React.HTMLAttributes<HTMLElement>
-      }
-    ]
-
-    return cols
-  }, [getWidth, handleResize, showHex])
-
-  const tableComponents = useMemo(
-    () => ({
-      header: {
-        cell: ResizableHeaderCell as unknown as React.ComponentType<
-          React.HTMLAttributes<HTMLElement>
-        >
-      }
-    }),
-    []
-  )
+  const selectAll = useCallback(() => {
+    setSelectedKeys(new Set(varbinds.map((vb) => vb.key)))
+  }, [varbinds])
 
   /**
    * Build a row-by-row export view with fixed 5-column format for CSV/XML export.
@@ -209,15 +124,14 @@ export function ResultsPanel(): React.ReactElement {
   )
 
   const handleCopySelected = useCallback(() => {
-    if (selectedRowKeys.length === 0) {
+    if (selectedKeys.size === 0) {
       message.info('Select rows to copy')
       return
     }
-    const keySet = new Set(selectedRowKeys.map(String))
-    const subset = varbinds.filter((vb) => keySet.has(vb.key))
+    const subset = varbinds.filter((vb) => selectedKeys.has(vb.key))
     navigator.clipboard.writeText(buildTsv(subset)).catch(() => {})
     message.success(`Copied ${subset.length} row(s)`)
-  }, [selectedRowKeys, varbinds, buildTsv])
+  }, [selectedKeys, varbinds, buildTsv])
 
   const handleCopyAll = useCallback(() => {
     if (rowCount === 0) {
@@ -255,8 +169,6 @@ export function ResultsPanel(): React.ReactElement {
     setStatusMessage('Results cleared')
   }, [setResult, setStatusMessage])
 
-  const enableVirtual = rowCount > VIRTUAL_SCROLL_THRESHOLD
-
   return (
     <div className="results-panel">
       <div className="results-header">
@@ -270,7 +182,7 @@ export function ResultsPanel(): React.ReactElement {
                 icon={<CopyOutlined />}
                 size="small"
                 onClick={handleCopySelected}
-                disabled={selectedRowKeys.length === 0}
+                disabled={selectedKeys.size === 0}
               >
                 Copy
               </Button>
@@ -320,37 +232,97 @@ export function ResultsPanel(): React.ReactElement {
         </div>
       </div>
 
-      <div className="results-table-container">
-        <Table<ResultVarbind>
-          columns={columns}
-          dataSource={varbinds}
-          rowKey="key"
-          size="small"
-          pagination={false}
-          loading={isQuerying}
-          components={tableComponents}
-          scroll={{ y: 'calc(100vh - 380px)', x: 'max-content' }}
-          virtual={enableVirtual}
-          rowSelection={{
-            selectedRowKeys,
-            onChange: setSelectedRowKeys
-          }}
-          locale={{
-            emptyText: session ? (
-              <Empty
-                image={Empty.PRESENTED_IMAGE_SIMPLE}
-                description={`本次 ${session.operation} 操作没有返回任何数据（${session.rootOid}）`}
-              />
-            ) : (
-              <Empty
-                image={Empty.PRESENTED_IMAGE_SIMPLE}
-                description="执行 SNMP 操作后结果在此处显示"
-              />
-            )
-          }}
-        />
-      </div>
+      {isQuerying && (
+        <div className="results-log-loading">
+          <Spin size="small" />
+        </div>
+      )}
+
+      {!isQuerying && rowCount === 0 && (
+        <div className="results-log-empty">
+          {session ? (
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description={`本次 ${session.operation} 操作没有返回任何数据（${session.rootOid}）`}
+            />
+          ) : (
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description="执行 SNMP 操作后结果在此处显示"
+            />
+          )}
+        </div>
+      )}
+
+      {!isQuerying && rowCount > 0 && (
+        <div className="results-log" ref={scrollContainerRef}>
+          <div className="results-log-header" onClick={selectAll} title="Click to select all rows">
+            <span className="log-header-text">***** SNMP QUERY STARTED *****</span>
+          </div>
+          <div style={{ position: 'relative', height: totalHeight }}>
+            <div style={{ position: 'absolute', top: offsetY, left: 0, right: 0 }}>
+              {visibleVarbinds.map((vb) => (
+                <div
+                  key={vb.key}
+                  className={`results-log-row ${selectedKeys.has(vb.key) ? 'selected' : ''} ${vb.isError ? 'error-row' : ''}`}
+                  onClick={() => toggleSelect(vb.key)}
+                >
+                  <span className="log-index">{vb.index}:</span>{' '}
+                  <span className="log-oid">{vb.columnName}.{vb.instance}</span>{' '}
+                  <span className="log-type">({vb.type.toLowerCase()})</span>{' '}
+                  <span className="log-value">
+                    {vb.isError ? (
+                      <span className="log-error">{vb.errorTag || 'error'}</span>
+                    ) : vb.rawType === 'OCTET STRING' && vb.value.length > 0 ? (
+                      <OCTETSTRINGCell
+                        value={vb.value}
+                        isHex={!!showHex[vb.key]}
+                        onToggle={() =>
+                          setShowHex((prev) => ({
+                            ...prev,
+                            [vb.key]: !prev[vb.key]
+                          }))
+                        }
+                      />
+                    ) : (
+                      vb.value
+                    )}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
+  )
+}
+
+interface OCTETSTRINGCellProps {
+  value: string
+  isHex: boolean
+  onToggle: () => void
+}
+
+/**
+ * Inline OCTET STRING value cell with HEX/ASCII toggle button.
+ */
+function OCTETSTRINGCell({ value, isHex, onToggle }: OCTETSTRINGCellProps): React.ReactElement {
+  return (
+    <>
+      {isHex ? toHexDisplay(value) : value}
+      <button
+        type="button"
+        className="log-hex-toggle"
+        onClick={(e) => {
+          e.stopPropagation()
+          onToggle()
+        }}
+        title={isHex ? 'Show ASCII' : 'Show Hex'}
+      >
+        {isHex ? 'ASCII' : 'HEX'}
+      </button>
+    </>
   )
 }
 
