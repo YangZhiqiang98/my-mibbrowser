@@ -97,6 +97,21 @@ When you've made similar changes to multiple files:
 
 ---
 
+## Gotcha: Same-Shape Filters Across Surfaces Must Share a Predicate
+
+**Problem**: When the same logical filter ("entry child is a table column", "this varbind belongs to my subtree", "this node is editable") is written inline at multiple call sites, a bug in the predicate has to be fixed at every site, and a future contract change (e.g., a new MIB `kind` value, a new editable access tag) requires editing N places. Inevitably, one is missed and the surfaces drift.
+
+**Symptom**: One surface starts behaving differently from another for the same node — typically discovered when a user reports "feature X shows the right rows but feature Y shows nothing" on the same selection.
+
+**Concrete prior incident**: Table Viewer and right-click GETBULK both filtered `entry.children` by `child.kind === 'column' && !!child.oid`. The MIB parser actually classifies `read-*` columns as `'scalar'` (only `not-accessible` columns get `'column'`), so both surfaces silently dropped every readable data column. Fix consolidated the filter into the shared `isTableColumnChild` predicate in `src/renderer/src/utils/tableSession.ts`; see `.trellis/spec/frontend/mib-tree-snmp-ops.md` Gotcha at the top.
+
+**Prevention checklist**:
+- [ ] Before writing a `kind === '<x>'` / `access === '<x>'` filter inline, grep for the same shape in other files
+- [ ] If you find 2+ sites filtering the same way, extract a named predicate once and import it
+- [ ] When you add a new `kind` / `access` value or change semantics, search for every call site of that predicate (one place) rather than every inline filter (N places)
+
+---
+
 ## Checklist Before Commit
 
 - [ ] Searched for existing similar code

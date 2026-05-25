@@ -27,6 +27,7 @@ import type { MibTreeNodeData } from '../types'
 import type { SnmpResult } from '../../../main/snmp/types'
 import { buildTreeFromNodes } from '../utils/mibTreeUtils'
 import { buildResultSession } from '../utils/resultColumns'
+import { isTableColumnChild } from '../utils/tableSession'
 import type { MibParseResult } from '../../../main/mib/types'
 
 const ACCESS_COLOR_MAP: Record<string, string> = {
@@ -961,19 +962,24 @@ function findNodeById(nodes: MibTreeNodeData[], id: string): MibTreeNodeData | n
  * For any leaf / scalar / column / unrecognized node, fall back to the node's
  * own OID. The fallback also covers tables/entries without column children so
  * the caller always gets at least one OID to send.
+ *
+ * "Column child" here uses the shared `isTableColumnChild` predicate so the
+ * GETBULK fan-out and the Table Viewer agree on what counts as a column —
+ * both accept `kind === 'column'` (INDEX / not-accessible) and
+ * `kind === 'scalar'` (read-* data columns) with a non-empty OID.
  */
-function resolveBulkOids(node: MibTreeNodeData): string[] {
+export function resolveBulkOids(node: MibTreeNodeData): string[] {
   if (node.kind === 'table') {
     const entry = node.children.find((child) => child.kind === 'entry')
     if (entry) {
       const columnOids = entry.children
-        .filter((child) => child.kind === 'column' && !!child.oid)
+        .filter(isTableColumnChild)
         .map((child) => child.oid)
       if (columnOids.length > 0) return columnOids
     }
   } else if (node.kind === 'entry') {
     const columnOids = node.children
-      .filter((child) => child.kind === 'column' && !!child.oid)
+      .filter(isTableColumnChild)
       .map((child) => child.oid)
     if (columnOids.length > 0) return columnOids
   }

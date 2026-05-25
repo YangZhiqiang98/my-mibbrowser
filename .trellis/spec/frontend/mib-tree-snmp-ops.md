@@ -10,6 +10,31 @@ Applies to any user-initiated SNMP operation that takes a `MibTreeNodeData` as i
 
 ---
 
+## Gotcha: `MibTreeNodeData.kind` Classification Rules (read before any `kind` filter)
+
+The MIB parser (`src/main/mib/parser.ts:determineKind`) assigns `kind` from `SYNTAX` + `MAX-ACCESS` with a non-obvious split:
+
+| `MAX-ACCESS`              | `SYNTAX` shape         | Resulting `kind` |
+|---------------------------|------------------------|-----------------|
+| any                       | `SEQUENCE OF X`        | `'table'`       |
+| any                       | `SEQUENCE` / has INDEX | `'entry'`       |
+| `not-accessible`          | scalar type            | `'column'`      |
+| `read-only` / `read-write` / `read-create` / `accessible-for-notify` | scalar type | **`'scalar'`** |
+
+The consequence that bites every new piece of code that filters by `kind`:
+
+- **A table's readable data columns are `kind: 'scalar'`, not `'column'`.** Only the INDEX (and other `not-accessible`) columns of a table get `kind: 'column'`. A naive `child.kind === 'column'` filter on an entry's children silently drops every column the user actually wants to see.
+- **A "scalar" in the tree might be either** a top-level scalar OBJECT-TYPE or a readable table column. The OID's position in the tree (under an `entry`) is what distinguishes them, not `kind`.
+
+### How to apply
+
+- When you need "all table columns of this entry", use the shared `isTableColumnChild` predicate exported from `src/renderer/src/utils/tableSession.ts`. It accepts both `kind === 'column'` and `kind === 'scalar'` with a non-empty OID. Reused by `resolveTableTarget` (Table Viewer) and `resolveBulkOids` (right-click GETBULK fan-out) so the two surfaces cannot drift.
+- Do not write a new inline `kind === 'column'` filter on entry/table children. If you find yourself wanting one, import `isTableColumnChild` instead.
+- This rule does **not** override the documented `resolveBulkOids` switch: `kind === 'table' | 'entry'` is still the trigger for fan-out, and `'scalar' | 'column'` at the leaf level still uses single-OID GETBULK. The gotcha is purely about filtering an entry's *children*, not about the top-level operation dispatch in `MibTreePanel.executeSnmpOperation`.
+- If `determineKind` ever gets a new bucket (e.g. notification-only objects under entries), update the predicate once in `tableSession.ts` instead of every call site. See [`guides/code-reuse-thinking-guide.md`](../guides/code-reuse-thinking-guide.md) → "Same-Shape Filters Across Surfaces" for the broader rule.
+
+---
+
 ## Constraint: GETBULK on a `table` / `entry` Node Must Send All Column OIDs
 
 When the user triggers a GETBULK on a node whose `kind === 'table'` or `kind === 'entry'`, the request must include **every column OID** under that entry as repeaters in a single multi-OID `getBulk` call:
@@ -38,13 +63,14 @@ Single-OID GETBULK is still correct on a `column` or `scalar`, because there is 
 
 - New code paths that take a `MibTreeNodeData` and produce SNMP OIDs for a bulk-shaped operation must go through `resolveBulkOids`. Do not branch on `kind` ad-hoc at the call site.
 - `resolveBulkOids` semantics:
-  - `kind === 'table'` → find the (single) `entry` child, collect every direct `column` child with a non-empty OID. Fall back to `[node.oid]` if no entry / no columns are found.
-  - `kind === 'entry'` → collect every direct `column` child with a non-empty OID. Fall back to `[node.oid]` if no columns are found.
+  - `kind === 'table'` → find the (single) `entry` child, collect every direct child whose `kind` is `column` or `scalar` and has a non-empty OID (via the shared `isTableColumnChild` predicate exported from `src/renderer/src/utils/tableSession.ts`). Fall back to `[node.oid]` if no entry / no columns are found.
+  - `kind === 'entry'` → collect every direct child via the same `isTableColumnChild` predicate. Fall back to `[node.oid]` if no columns are found.
   - Everything else → `[node.oid]`.
 - The fallback `[node.oid]` is load-bearing: callers can always assume the helper returns at least one OID. Do not change `resolveBulkOids` to return `[]` for malformed trees.
 - When adding a new bulk-shaped operation (e.g. a future "preview first N rows" button), reuse the same helper. If the desired semantics differ enough to need a different shape, add a sibling helper next to `resolveBulkOids` rather than duplicating the `kind` switch.
 - Renderer-side decisions about which OIDs to send belong here, not in the main process. `src/main/snmp/client.ts` accepts an `oids: string[]` and treats them all as repeaters when `nonRepeaters === 0`; it does not (and should not) know about MIB tree structure.
 - `maxRepetitions` and `nonRepeaters` defaults are part of `snmpConfig`. New GETBULK / BULK_WALK trigger sites must read `snmpConfig.bulkMaxRepetitions` and `snmpConfig.bulkNonRepeaters` instead of hard-coding `10` / `0` locally.
+- Why include `scalar` and not just `column`: the MIB parser (`src/main/mib/parser.ts:determineKind`) classifies any column whose `MAX-ACCESS` is not `not-accessible` as `'scalar'` rather than `'column'` — so the readable data columns of a table show up in the tree as `'scalar'` nodes. In SMI semantics both `column` (typically INDEX / not-accessible columns) and `scalar` (typically read-* data columns) under an entry are columns of that table, and the GETBULK fan-out / Table Viewer must treat them uniformly. The same predicate is reused by `resolveTableTarget` in `src/renderer/src/utils/tableSession.ts` so the two surfaces cannot drift.
 
 ---
 

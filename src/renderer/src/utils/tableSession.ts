@@ -65,16 +65,34 @@ function compareInstances(a: string, b: string): number {
   return aParts.length - bParts.length
 }
 
+/**
+ * Predicate for "this child of an entry is a table column."
+ *
+ * The MIB parser (`src/main/mib/parser.ts:determineKind`) classifies any
+ * column whose access is not `not-accessible` as `'scalar'` rather than
+ * `'column'`. In SMI semantics, every direct child of a SEQUENCE entry that
+ * carries an OID is a column of that table, regardless of access. Both
+ * `kind === 'column'` (INDEX / not-accessible columns) and `kind === 'scalar'`
+ * (read-* data columns) must therefore be treated as table columns.
+ *
+ * Reused by Table Viewer (`resolveTableTarget`) and right-click GETBULK
+ * (`resolveBulkOids` in `MibTreePanel.tsx`) to keep the filter rule in one
+ * place — see `.trellis/spec/frontend/mib-tree-snmp-ops.md` for the spec.
+ */
+export function isTableColumnChild(node: MibTreeNodeData): boolean {
+  return (node.kind === 'column' || node.kind === 'scalar') && !!node.oid
+}
+
 export function resolveTableTarget(node: MibTreeNodeData): TableTarget | null {
   if (node.kind === 'table') {
     const entry = node.children.find((child) => child.kind === 'entry')
     if (!entry) return null
-    const columns = entry.children.filter((child) => child.kind === 'column' && !!child.oid)
+    const columns = entry.children.filter(isTableColumnChild)
     return { tableNode: node, entryNode: entry, columns }
   }
 
   if (node.kind === 'entry') {
-    const columns = node.children.filter((child) => child.kind === 'column' && !!child.oid)
+    const columns = node.children.filter(isTableColumnChild)
     return { tableNode: node, entryNode: node, columns }
   }
 
