@@ -232,68 +232,70 @@ export function ResultsPanel(): React.ReactElement {
         </div>
       </div>
 
-      {isQuerying && (
-        <div className="results-log-loading">
-          <Spin size="small" />
-        </div>
-      )}
-
-      {!isQuerying && rowCount === 0 && (
-        <div className="results-log-empty">
-          {session ? (
-            <Empty
-              image={Empty.PRESENTED_IMAGE_SIMPLE}
-              description={`本次 ${session.operation} 操作没有返回任何数据（${session.rootOid}）`}
-            />
-          ) : (
-            <Empty
-              image={Empty.PRESENTED_IMAGE_SIMPLE}
-              description="执行 SNMP 操作后结果在此处显示"
-            />
-          )}
-        </div>
-      )}
-
-      {!isQuerying && rowCount > 0 && (
-        <div className="results-log" ref={scrollContainerRef}>
-          <div className="results-log-header" onClick={selectAll} title="Click to select all rows">
-            <span className="log-header-text">***** SNMP QUERY STARTED *****</span>
+      <div className="results-log" ref={scrollContainerRef}>
+        {isQuerying && (
+          <div className="results-log-loading">
+            <Spin size="small" />
           </div>
-          <div style={{ position: 'relative', height: totalHeight }}>
-            <div style={{ position: 'absolute', top: offsetY, left: 0, right: 0 }}>
-              {visibleVarbinds.map((vb) => (
-                <div
-                  key={vb.key}
-                  className={`results-log-row ${selectedKeys.has(vb.key) ? 'selected' : ''} ${vb.isError ? 'error-row' : ''}`}
-                  onClick={() => toggleSelect(vb.key)}
-                >
-                  <span className="log-index">{vb.index}:</span>{' '}
-                  <span className="log-oid">{vb.columnName}.{vb.instance}</span>{' '}
-                  <span className="log-type">({vb.type.toLowerCase()})</span>{' '}
-                  <span className="log-value">
-                    {vb.isError ? (
-                      <span className="log-error">{vb.errorTag || 'error'}</span>
-                    ) : vb.rawType === 'OCTET STRING' && vb.value.length > 0 ? (
-                      <OCTETSTRINGCell
-                        value={vb.value}
-                        isHex={!!showHex[vb.key]}
-                        onToggle={() =>
-                          setShowHex((prev) => ({
-                            ...prev,
-                            [vb.key]: !prev[vb.key]
-                          }))
-                        }
-                      />
-                    ) : (
-                      vb.value
-                    )}
-                  </span>
-                </div>
-              ))}
+        )}
+
+        {!isQuerying && rowCount === 0 && (
+          <div className="results-log-empty">
+            {session ? (
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description={`本次 ${session.operation} 操作没有返回任何数据（${session.rootOid}）`}
+              />
+            ) : (
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description="执行 SNMP 操作后结果在此处显示"
+              />
+            )}
+          </div>
+        )}
+
+        {!isQuerying && rowCount > 0 && (
+          <>
+            <div className="results-log-header" onClick={selectAll} title="Click to select all rows">
+              <span className="log-header-text">***** SNMP QUERY STARTED *****</span>
             </div>
-          </div>
-        </div>
-      )}
+            <div style={{ position: 'relative', height: totalHeight }}>
+              <div style={{ position: 'absolute', top: offsetY, left: 0, right: 0 }}>
+                {visibleVarbinds.map((vb) => (
+                  <div
+                    key={vb.key}
+                    className={`results-log-row ${selectedKeys.has(vb.key) ? 'selected' : ''} ${vb.isError ? 'error-row' : ''}`}
+                    onClick={() => toggleSelect(vb.key)}
+                  >
+                    <span className="log-index">{vb.index}:</span>{' '}
+                    <span className="log-oid">{vb.columnName}.{vb.instance}</span>{' '}
+                    <span className="log-type">({vb.type.toLowerCase()})</span>{' '}
+                    <span className="log-value">
+                      {vb.isError ? (
+                        <span className="log-error">{vb.errorTag || 'error'}</span>
+                      ) : vb.rawType === 'OCTET STRING' && vb.value.length > 0 ? (
+                        <OCTETSTRINGCell
+                          value={vb.value}
+                          isHex={!!showHex[vb.key]}
+                          onToggle={() =>
+                            setShowHex((prev) => ({
+                              ...prev,
+                              [vb.key]: !prev[vb.key]
+                            }))
+                          }
+                        />
+                      ) : (
+                        vb.value
+                      )}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   )
 }
