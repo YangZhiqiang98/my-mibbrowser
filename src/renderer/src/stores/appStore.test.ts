@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { DEBUG_LOG_ENTRY_LIMIT, normalizeSnmpConfig, useAppStore } from './appStore'
+import { DEBUG_LOG_ENTRY_LIMIT, TRAP_EVENT_LIMIT, normalizeSnmpConfig, useAppStore } from './appStore'
 
 describe('normalizeSnmpConfig', () => {
   it('keeps old profiles compatible by defaulting transport', () => {
@@ -66,5 +66,50 @@ describe('debug log state', () => {
     useAppStore.getState().clearDebugLogs()
 
     expect(useAppStore.getState().debugLogs).toEqual([])
+  })
+})
+
+describe('trap console state', () => {
+  it('keeps only the most recent trap events', () => {
+    useAppStore.setState({ trapEvents: [] })
+
+    for (let index = 1; index <= TRAP_EVENT_LIMIT + 3; index += 1) {
+      useAppStore.getState().appendTrapEvent({
+        id: index,
+        timestamp: index,
+        sourceAddress: '192.0.2.1',
+        sourcePort: 162,
+        version: 'v2c',
+        kind: 'trap',
+        pduType: 'TrapV2',
+        pduTypeCode: 167,
+        varbinds: []
+      })
+    }
+
+    const events = useAppStore.getState().trapEvents
+    expect(events).toHaveLength(TRAP_EVENT_LIMIT)
+    expect(events[0].id).toBe(4)
+    expect(events[events.length - 1].id).toBe(TRAP_EVENT_LIMIT + 3)
+  })
+
+  it('clears trap events', () => {
+    useAppStore.setState({
+      trapEvents: [{
+        id: 1,
+        timestamp: 1,
+        sourceAddress: '192.0.2.1',
+        sourcePort: 162,
+        version: 'v2c',
+        kind: 'trap',
+        pduType: 'TrapV2',
+        pduTypeCode: 167,
+        varbinds: []
+      }]
+    })
+
+    useAppStore.getState().clearTrapEvents()
+
+    expect(useAppStore.getState().trapEvents).toEqual([])
   })
 })

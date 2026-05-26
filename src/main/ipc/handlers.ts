@@ -5,6 +5,8 @@ import type { MibParseResult, MibNode, MibModule } from '../mib/types'
 import { snmpGet, snmpGetNext, snmpGetBulk, snmpSet, snmpWalk, snmpBulkWalk, cancelCurrentSnmpOperation } from '../snmp/client'
 import type { SnmpConfig, SnmpResult, SnmpSetValue, SnmpVarbind } from '../snmp/types'
 import type { WalkOptions } from '../snmp/client'
+import { getTrapReceiverStatus, startTrapReceiver, stopTrapReceiver } from '../snmp/trapReceiver'
+import type { TrapNotificationEvent, TrapReceiverConfig, TrapReceiverStatus } from '../../shared/trapTypes'
 import { debugLog, isDebugModeEnabled, setDebugMode } from '../debugLogger'
 import { readFileSync, writeFileSync, existsSync, unlinkSync, readdirSync, mkdirSync } from 'fs'
 import { join, basename } from 'path'
@@ -208,6 +210,11 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('snmp:walk', handleSnmpWalk)
   ipcMain.handle('snmp:bulk-walk', handleSnmpBulkWalk)
   ipcMain.handle('snmp:cancel', handleSnmpCancel)
+
+  // Trap / Inform receiver
+  ipcMain.handle('trap:start', handleTrapStart)
+  ipcMain.handle('trap:stop', handleTrapStop)
+  ipcMain.handle('trap:get-status', handleTrapGetStatus)
 
   // Connection profiles
   ipcMain.handle('profile:save', handleSaveProfile)
@@ -565,6 +572,48 @@ function handleSnmpCancel(_event: IpcMainInvokeEvent): boolean {
   const cancelled = cancelCurrentSnmpOperation()
   debugLog('ipc', 'snmp:cancel result', { cancelled })
   return cancelled
+}
+
+function handleTrapStart(_event: IpcMainInvokeEvent, config: TrapReceiverConfig): TrapReceiverStatus {
+  debugLog('ipc', 'trap:start invoke', {
+    port: config.port,
+    transport: config.transport,
+    disableAuthorization: config.disableAuthorization,
+    includeAuthentication: config.includeAuthentication,
+    communityConfigured: !!config.community.trim(),
+    v3Enabled: config.v3.enabled,
+    v3UserConfigured: !!config.v3.username.trim()
+  })
+  return startTrapReceiver(config, {
+    resolveName: (oid) => resolveOidToName(oid, mibNodes),
+    onEvent: broadcastTrapEvent,
+    onStatus: broadcastTrapStatus
+  })
+}
+
+function handleTrapStop(): TrapReceiverStatus {
+  debugLog('ipc', 'trap:stop invoke')
+  const status = stopTrapReceiver()
+  broadcastTrapStatus(status)
+  return status
+}
+
+function handleTrapGetStatus(): TrapReceiverStatus {
+  return getTrapReceiverStatus()
+}
+
+function broadcastTrapEvent(event: TrapNotificationEvent): void {
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (window.isDestroyed() || window.webContents.isDestroyed()) continue
+    window.webContents.send('trap:event', event)
+  }
+}
+
+function broadcastTrapStatus(status: TrapReceiverStatus): void {
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (window.isDestroyed() || window.webContents.isDestroyed()) continue
+    window.webContents.send('trap:status', status)
+  }
 }
 
 function handleDebugGetEnabled(): boolean {

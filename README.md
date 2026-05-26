@@ -21,6 +21,7 @@ MIB Browser 是一个基于 Electron、React 和 TypeScript 构建的桌面 SNMP
 | SNMP 查询 | 支持 v1/v2c/v3、GET、GETNEXT、GETBULK、WALK、BULK WALK、SET |
 | 工具窗口 | GET、SET、Table Viewer 使用独立 Electron 工具窗口 |
 | 表查看/编辑 | 自动识别 table/entry/columns/instance，支持过滤、排序、分页、复制、CSV 导出、基础 SET 编辑，以及 RowStatus 表的 Add Row / Delete Row |
+| Trap / Inform 控制台 | 支持本地 UDP Trap/Inform 监听、启动/停止、实时事件查看、MIB 名称解析、过滤、复制、清空和自动滚动 |
 | 连接配置 | 支持 Profiles，并自动恢复上次使用的完整设备配置 |
 | Debug Logs | Debug Mode 开启后，可在应用内查看 SNMP/MIB/IPC 调试日志 |
 
@@ -70,7 +71,8 @@ npm run build
 2. 配置设备：在连接设置中填写 Host/IP、端口、SNMP 版本、community 或 SNMPv3 参数。
 3. 执行查询：可以手动输入 OID，也可以从 MIB 树节点右键发起 GET、SET、GETBULK、WALK、BULK WALK。
 4. 查看表数据：对 `table` 或 `entry` 节点打开 Table Viewer，按行列查看实例数据。
-5. 调试问题：开启 Debug Mode 后，通过 Debug Logs 面板查看请求参数、耗时、错误和返回数量。
+5. 接收通知：打开 Trap / Inform Console，默认监听 `udp4:9162`；如需标准端口可改为 `162`，但部分系统需要管理员权限。
+6. 调试问题：开启 Debug Mode 后，通过 Debug Logs 面板查看请求参数、耗时、错误和返回数量。
 
 连接设置会自动记住上次使用的完整设备配置，包括 Host/IP、端口、SNMP 版本、认证信息、超时、重试、Bulk 参数和 transport。Profiles 仍用于保存多套命名配置。
 

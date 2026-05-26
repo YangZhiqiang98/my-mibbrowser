@@ -9,7 +9,8 @@ import {
   ApiOutlined,
   LinkOutlined,
   StopOutlined,
-  FileTextOutlined
+  FileTextOutlined,
+  ThunderboltOutlined
 } from '@ant-design/icons'
 import { normalizeSnmpConfig, useAppStore } from '../stores/appStore'
 import type { SnmpConfig, SecurityLevel, AuthProtocol, PrivProtocol, SnmpTransport } from '../../../main/snmp/types'
@@ -33,6 +34,10 @@ export function Toolbar(): React.ReactElement {
   const debugLogCount = useAppStore((s) => s.debugLogs.length)
   const debugLogPanelOpen = useAppStore((s) => s.debugLogPanelOpen)
   const setDebugLogPanelOpen = useAppStore((s) => s.setDebugLogPanelOpen)
+  const trapEventCount = useAppStore((s) => s.trapEvents.length)
+  const trapConsoleOpen = useAppStore((s) => s.trapConsoleOpen)
+  const trapReceiverStatus = useAppStore((s) => s.trapReceiverStatus)
+  const setTrapConsoleOpen = useAppStore((s) => s.setTrapConsoleOpen)
   const [showConnectionSettings, setShowConnectionSettings] = useState(false)
   const [profileName, setProfileName] = useState('')
   const [showSaveModal, setShowSaveModal] = useState(false)
@@ -214,6 +219,18 @@ export function Toolbar(): React.ReactElement {
             size="small"
             type={debugLogPanelOpen ? 'primary' : 'default'}
             onClick={() => setDebugLogPanelOpen(!debugLogPanelOpen)}
+          />
+        </Badge>
+      </Tooltip>
+
+      <Tooltip title={trapReceiverStatus.listening ? 'Trap / Inform console is listening' : 'Trap / Inform console'}>
+        <Badge count={trapEventCount} size="small" overflowCount={999}>
+          <Button
+            icon={<ThunderboltOutlined />}
+            size="small"
+            type={trapConsoleOpen ? 'primary' : 'default'}
+            className={trapReceiverStatus.listening ? 'trap-console-toolbar-listening' : undefined}
+            onClick={() => setTrapConsoleOpen(!trapConsoleOpen)}
           />
         </Badge>
       </Tooltip>

@@ -2,8 +2,10 @@ import { create } from 'zustand'
 import type { ProfileItem, MibTreeNodeData, ResultSession, ResultVarbind } from '../types'
 import type { SnmpConfig, SnmpOperation } from '../../../main/snmp/types'
 import type { DebugLogEntry } from '../../../shared/debugLogTypes'
+import type { TrapNotificationEvent, TrapReceiverStatus } from '../../../shared/trapTypes'
 
 export const DEBUG_LOG_ENTRY_LIMIT = 500
+export const TRAP_EVENT_LIMIT = 1000
 
 interface AppState {
   // MIB tree
@@ -36,6 +38,10 @@ interface AppState {
   debugLogs: DebugLogEntry[]
   debugLogPanelOpen: boolean
   debugLogAutoScroll: boolean
+  trapEvents: TrapNotificationEvent[]
+  trapReceiverStatus: TrapReceiverStatus
+  trapConsoleOpen: boolean
+  trapConsoleAutoScroll: boolean
 
   // Actions
   setMibTree: (tree: MibTreeNodeData[]) => void
@@ -60,6 +66,11 @@ interface AppState {
   clearDebugLogs: () => void
   setDebugLogPanelOpen: (open: boolean) => void
   setDebugLogAutoScroll: (enabled: boolean) => void
+  appendTrapEvent: (event: TrapNotificationEvent) => void
+  clearTrapEvents: () => void
+  setTrapReceiverStatus: (status: TrapReceiverStatus) => void
+  setTrapConsoleOpen: (open: boolean) => void
+  setTrapConsoleAutoScroll: (enabled: boolean) => void
 }
 
 const defaultConfig: SnmpConfig = {
@@ -119,6 +130,15 @@ export const useAppStore = create<AppState>((set) => ({
   debugLogs: [],
   debugLogPanelOpen: false,
   debugLogAutoScroll: true,
+  trapEvents: [],
+  trapReceiverStatus: {
+    listening: false,
+    port: 9162,
+    transport: 'udp4',
+    message: 'Trap receiver stopped'
+  },
+  trapConsoleOpen: false,
+  trapConsoleAutoScroll: true,
 
   // MIB actions
   setMibTree: (tree) => set({ mibTree: tree }),
@@ -181,5 +201,15 @@ export const useAppStore = create<AppState>((set) => ({
     }),
   clearDebugLogs: () => set({ debugLogs: [] }),
   setDebugLogPanelOpen: (open) => set({ debugLogPanelOpen: open }),
-  setDebugLogAutoScroll: (enabled) => set({ debugLogAutoScroll: enabled })
+  setDebugLogAutoScroll: (enabled) => set({ debugLogAutoScroll: enabled }),
+  appendTrapEvent: (event) =>
+    set((state) => {
+      const trapEvents = [...state.trapEvents, event]
+      if (trapEvents.length <= TRAP_EVENT_LIMIT) return { trapEvents }
+      return { trapEvents: trapEvents.slice(trapEvents.length - TRAP_EVENT_LIMIT) }
+    }),
+  clearTrapEvents: () => set({ trapEvents: [] }),
+  setTrapReceiverStatus: (status) => set({ trapReceiverStatus: status }),
+  setTrapConsoleOpen: (open) => set({ trapConsoleOpen: open }),
+  setTrapConsoleAutoScroll: (enabled) => set({ trapConsoleAutoScroll: enabled })
 }))

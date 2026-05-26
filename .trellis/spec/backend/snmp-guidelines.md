@@ -281,11 +281,111 @@ user.authProtocol = resolveAuthProtocol(config.authProtocol)
 
 ---
 
+## Constraint 7: Trap / Inform Receiver Is A Main-Process Singleton
+
+Trap and Inform receiving is a long-lived UDP listener, so it belongs in the Electron main process. Renderer code may request start/stop and display events, but it must not own sockets, decode raw `net-snmp` callback objects, or infer receiver state locally.
+
+### 1. Scope / Trigger
+
+- Trigger: Trap / Inform console start/stop from the main renderer.
+- Main-process owner: `src/main/snmp/trapReceiver.ts`.
+- IPC owner: `src/main/ipc/handlers.ts`.
+- Preload/shared contract: `src/shared/trapTypes.ts` and `window.api.trap`.
+- Renderer state: bounded display buffer in `src/renderer/src/stores/appStore.ts`.
+
+### 2. Signatures
+
+```typescript
+export function getTrapReceiverStatus(): TrapReceiverStatus
+export function startTrapReceiver(
+  config: TrapReceiverConfig,
+  handlers: TrapReceiverHandlers
+): TrapReceiverStatus
+export function stopTrapReceiver(): TrapReceiverStatus
+export function formatTrapNotification(
+  trap: RawTrap,
+  options: { id: number; timestamp: number; resolveName: (oid: string) => string | undefined }
+): TrapNotificationEvent
+```
+
+IPC channels:
+
+```typescript
+ipcMain.handle('trap:start', handleTrapStart)
+ipcMain.handle('trap:stop', handleTrapStop)
+ipcMain.handle('trap:get-status', handleTrapGetStatus)
+webContents.send('trap:event', event)
+webContents.send('trap:status', status)
+```
+
+### 3. Contracts
+
+- `TrapReceiverConfig.port` is the local UDP listen port. The UI default is `9162`; users may choose `162`, but OS privilege errors must surface normally.
+- `TrapReceiverConfig.transport` accepts only the centralized `SnmpTransport` values (`udp4`, `udp6`) and must be validated through `resolveSnmpTransport`.
+- `TrapReceiverConfig.community` is added to the receiver authorizer when non-empty.
+- SNMPv3 receiver users reuse `resolveAuthProtocol` / `resolvePrivProtocol`; unsupported protocols must throw before silently downgrading.
+- `includeAuthentication` should be true for the console so `community` or `user` can be displayed when the library exposes it.
+- Incoming varbind OIDs must be normalized to dotless form before name resolution or renderer emission.
+- OID names are resolved in the main process with the current MIB tree (`resolveOidToName`) before broadcasting events.
+- InformRequest ACK behavior is delegated to `net-snmp.createReceiver`; the library sends GetResponse before invoking the callback.
+- Renderer state keeps a bounded display buffer only. The actual socket lifetime and authoritative status stay in the main singleton.
+
+### 4. Validation & Error Matrix
+
+| Condition | Required behavior |
+|---|---|
+| Invalid port (`<1`, `>65535`, non-integer) | Start returns `listening: false` with `Trap receiver failed to start: ...` |
+| Unsupported transport | `resolveSnmpTransport` throws; start returns failed status |
+| Unsupported SNMPv3 auth/privacy protocol | Mapping helper throws; start returns failed status |
+| Fatal socket error (`EADDRINUSE`, `EADDRNOTAVAIL`, `EACCES`, `EPERM`, `EINVAL`) | Broadcast error status, mark `listening: false`, close receiver |
+| Per-message authorization/processing error | Broadcast warning/error status, keep listener alive when the error is not fatal |
+| InformRequest received | Let `net-snmp` ACK, then broadcast the formatted event as `kind: 'inform'` |
+| TrapV2 received | Broadcast formatted event as `kind: 'trap'` with trap OID from `snmpTrapOID.0` when present |
+| Receiver stopped by user | Close socket, keep previous port/transport in status, broadcast stopped status |
+
+### 5. Good/Base/Bad Cases
+
+- Good: user starts `udp4:9162`, receives a TrapV2 event, and sees source address, PDU type, resolved trap name, and varbind names.
+- Good: user starts on port `162` without privileges and sees a clear permission/bind error instead of a silent no-op.
+- Base: no MIBs are loaded; events still render using numeric OIDs.
+- Bad: renderer creates a UDP socket or re-decodes raw `net-snmp` PDU data.
+- Bad: unsupported SNMPv3 protocols fall back to MD5/DES.
+
+### 6. Tests Required
+
+- Unit tests for `formatTrapNotification` covering TrapV2, InformRequest, leading-dot OID normalization, trap OID resolution, and source metadata.
+- Unit tests for renderer store buffering: append is capped and clear removes all events.
+- Typecheck must cover shared trap types, preload declarations, and renderer consumers.
+- Manual smoke should start/stop the console on `9162`, verify bind error feedback on an occupied port, and send at least one TrapV2 plus one InformRequest from a test sender.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```typescript
+window.dgram.createSocket('udp4').on('message', decodeTrapInRenderer)
+```
+
+#### Correct
+
+```typescript
+ipcMain.handle('trap:start', handleTrapStart)
+webContents.send('trap:event', formatTrapNotification(trap, {
+  id,
+  timestamp,
+  resolveName: (oid) => resolveOidToName(oid, mibNodes)
+}))
+```
+
+---
+
 ## Cross-References
 
 - `src/main/snmp/client.ts` — canonical implementations of `oidInSubtree`, `stripLeadingDot`, `formatVarbindValue`, `snmpWalk`, `snmpBulkWalk`, `snmpGetBulk`, `flattenBulkVarbinds`, `cancelCurrentSnmpOperation`, and the `finish(session, result)` pattern in all six SNMP entry points.
+- `src/main/snmp/trapReceiver.ts` — Trap / Inform receiver singleton, event formatting, receiver status, fatal error classification, and SNMPv3 authorizer setup.
 - `src/main/snmp/options.ts` — main-process mapping from supported SNMP option keys to `net-snmp` constants, with explicit unsupported-option errors.
 - `src/shared/snmpOptions.ts` — renderer-safe shared option keys and labels for profiles and connection settings UI.
+- `src/shared/trapTypes.ts` — shared Trap / Inform receiver config, status, and event payload types used by main, preload, and renderer.
 - `src/main/mib/parser.ts` — `resolveOidToName` is the other historical site for the leading-dot normalization rule. Any new OID-keyed lookup in the MIB layer must strip first.
 - `src/main/ipc/handlers.ts` — `handleSnmpCancel` is the IPC passthrough; the actual cancel logic lives in `cancelCurrentSnmpOperation` in `client.ts`.
 - [error-handling.md](./error-handling.md) — Walk results follow the `SnmpResult` envelope; out-of-subtree termination is not an error. Abort follows the same envelope with the additional `aborted: true` flag.

@@ -10,6 +10,7 @@ import type {
   ToolWindowMibNode
 } from '../../../shared/toolWindowTypes'
 import type { DebugLogEntry } from '../../../shared/debugLogTypes'
+import type { TrapNotificationEvent, TrapReceiverConfig, TrapReceiverStatus } from '../../../shared/trapTypes'
 
 declare global {
   interface Window {
@@ -33,6 +34,13 @@ declare global {
         cancel: () => Promise<boolean>
         onWalkProgress: (callback: (varbinds: SnmpVarbind[]) => void) => () => void
         removeWalkListeners: () => void
+      }
+      trap: {
+        start: (config: TrapReceiverConfig) => Promise<TrapReceiverStatus>
+        stop: () => Promise<TrapReceiverStatus>
+        getStatus: () => Promise<TrapReceiverStatus>
+        onEvent: (callback: (event: TrapNotificationEvent) => void) => () => void
+        onStatus: (callback: (status: TrapReceiverStatus) => void) => () => void
       }
       profile: {
         save: (profile: { id: string; name: string; config: SnmpConfig }) => Promise<void>

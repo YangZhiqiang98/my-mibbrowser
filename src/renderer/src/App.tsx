@@ -7,6 +7,7 @@ import { QueryPanel } from './components/QueryPanel'
 import { ResultsPanel } from './components/ResultsPanel'
 import { StatusBar } from './components/StatusBar'
 import { DebugLogsPanel } from './components/DebugLogsPanel'
+import { TrapConsolePanel } from './components/TrapConsolePanel'
 import { normalizeSnmpConfig, useAppStore } from './stores/appStore'
 import { buildTreeFromNodes } from './utils/mibTreeUtils'
 import type { SnmpToolWindowToast } from '../../shared/toolWindowTypes'
@@ -83,6 +84,7 @@ export default function App(): React.ReactElement {
       <AntApp>
         <MainWindowToolBridge />
         <DebugLogBridge />
+        <TrapReceiverBridge />
         <div className="app-container">
           <Toolbar />
           <div className="main-content">
@@ -97,11 +99,37 @@ export default function App(): React.ReactElement {
             </div>
           </div>
           <DebugLogsPanel />
+          <TrapConsolePanel />
           <StatusBar />
         </div>
       </AntApp>
     </ConfigProvider>
   )
+}
+
+function TrapReceiverBridge(): null {
+  const appendTrapEvent = useAppStore((s) => s.appendTrapEvent)
+  const setTrapReceiverStatus = useAppStore((s) => s.setTrapReceiverStatus)
+  const setStatusMessage = useAppStore((s) => s.setStatusMessage)
+
+  useEffect(() => {
+    void window.api.trap.getStatus().then(setTrapReceiverStatus).catch(() => undefined)
+
+    const cleanupEvent = window.api.trap.onEvent((event) => {
+      appendTrapEvent(event)
+    })
+    const cleanupStatus = window.api.trap.onStatus((status) => {
+      setTrapReceiverStatus(status)
+      setStatusMessage(status.message)
+    })
+
+    return () => {
+      cleanupEvent()
+      cleanupStatus()
+    }
+  }, [appendTrapEvent, setStatusMessage, setTrapReceiverStatus])
+
+  return null
 }
 
 function DebugLogBridge(): null {

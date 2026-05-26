@@ -10,6 +10,7 @@ import type {
   ToolWindowMibNode
 } from '../shared/toolWindowTypes'
 import type { DebugLogEntry } from '../shared/debugLogTypes'
+import type { TrapNotificationEvent, TrapReceiverConfig, TrapReceiverStatus } from '../shared/trapTypes'
 
 /**
  * API exposed to the renderer process via contextBridge
@@ -49,6 +50,24 @@ const api = {
     },
     removeWalkListeners: (): void => {
       ipcRenderer.removeAllListeners('snmp:walk-progress')
+    }
+  },
+
+  // Trap / Inform receiver
+  trap: {
+    start: (config: TrapReceiverConfig): Promise<TrapReceiverStatus> =>
+      ipcRenderer.invoke('trap:start', config),
+    stop: (): Promise<TrapReceiverStatus> => ipcRenderer.invoke('trap:stop'),
+    getStatus: (): Promise<TrapReceiverStatus> => ipcRenderer.invoke('trap:get-status'),
+    onEvent: (callback: (event: TrapNotificationEvent) => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, trapEvent: TrapNotificationEvent) => callback(trapEvent)
+      ipcRenderer.on('trap:event', listener)
+      return () => ipcRenderer.removeListener('trap:event', listener)
+    },
+    onStatus: (callback: (status: TrapReceiverStatus) => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, status: TrapReceiverStatus) => callback(status)
+      ipcRenderer.on('trap:status', listener)
+      return () => ipcRenderer.removeListener('trap:status', listener)
     }
   },
 

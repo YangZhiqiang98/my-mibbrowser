@@ -56,6 +56,11 @@ html, body, #root {
   width: 140px;
 }
 
+.trap-console-toolbar-listening {
+  color: #52c41a;
+  border-color: #52c41a;
+}
+
 .connection-settings {
   display: flex;
   flex-direction: column;
@@ -546,6 +551,184 @@ html, body, #root {
   word-break: break-word;
   font-family: Consolas, Monaco, 'Courier New', monospace;
   font-size: 12px;
+}
+
+/* Trap / Inform console */
+.trap-console-panel {
+  flex: 0 0 320px;
+  min-height: 220px;
+  max-height: 44vh;
+  display: flex;
+  flex-direction: column;
+  background: #0f1720;
+  border-top: 1px solid #263241;
+  color: #d6dde5;
+}
+
+.trap-console-header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  background: #141c26;
+  border-bottom: 1px solid #263241;
+}
+
+.trap-console-title {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 8px;
+  color: #f3f7fb;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.trap-console-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 0;
+  gap: 8px;
+}
+
+.trap-console-port {
+  width: 88px;
+}
+
+.trap-console-transport {
+  width: 120px;
+}
+
+.trap-console-community {
+  width: 120px;
+}
+
+.trap-console-filter {
+  width: 190px;
+}
+
+.trap-console-status {
+  flex: 0 0 auto;
+  padding: 5px 12px;
+  color: #9fb2c6;
+  background: #101821;
+  border-bottom: 1px solid #263241;
+  font-size: 12px;
+}
+
+.trap-console-status.is-error {
+  color: #ffccc7;
+  background: #1f1517;
+}
+
+.trap-console-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 8px 12px;
+  font-family: Consolas, Monaco, 'Courier New', monospace;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.trap-console-empty {
+  min-height: 140px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.trap-console-empty .ant-empty-description {
+  color: #8b98a5;
+}
+
+.trap-event {
+  padding: 7px 9px;
+  border-left: 2px solid #fa8c16;
+  background: #121b25;
+}
+
+.trap-event + .trap-event {
+  margin-top: 7px;
+}
+
+.trap-event-inform {
+  border-left-color: #9254de;
+}
+
+.trap-event-summary {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.trap-event-time {
+  flex: 0 0 auto;
+  color: #7f8d9b;
+}
+
+.trap-event-source {
+  flex: 0 0 auto;
+  color: #69c0ff;
+}
+
+.trap-event-type {
+  min-width: 0;
+  overflow: hidden;
+  color: #f3f7fb;
+  text-overflow: ellipsis;
+}
+
+.trap-event-meta {
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: #8b98a5;
+}
+
+.trap-event-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 4px;
+  color: #9fb2c6;
+}
+
+.trap-event-details code,
+.trap-varbind code {
+  color: #d6e4ff;
+  font-family: Consolas, Monaco, 'Courier New', monospace;
+}
+
+.trap-varbind-list {
+  margin-top: 6px;
+  padding-top: 5px;
+  border-top: 1px solid #263241;
+}
+
+.trap-varbind {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.2fr) 110px minmax(160px, 1fr);
+  gap: 8px;
+  min-width: 0;
+  padding: 2px 0;
+}
+
+.trap-varbind code,
+.trap-varbind-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trap-varbind-type {
+  color: #ffd666;
 }
 
 /* Node detail panel */
