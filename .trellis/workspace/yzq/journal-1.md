@@ -1035,3 +1035,36 @@ Fixed MIB tree right-click WALK and BULK_WALK to consume walk progress events an
 ### Next Steps
 
 - None - task complete
+
+
+## Session 27: Simplify README
+
+**Date**: 2026-05-26
+**Task**: Simplify README
+**Branch**: `main`
+
+### Summary
+
+Simplified README back to a concise project overview while keeping doc/png screenshots referenced.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f591ba0` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

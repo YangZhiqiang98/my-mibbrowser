@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 26
+- **Total Sessions**: 27
 - **Last Active**: 2026-05-26
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1037 | Active |
+| `journal-1.md` | ~1070 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 27 | 2026-05-26 | Simplify README | `f591ba0` | `main` |
 | 26 | 2026-05-26 | Stream MIB-tree walk results | `df8295d` | `main` |
 | 25 | 2026-05-26 | Stream WALK varbinds end-to-end and unblock display gate | `459f6f9` | `main` |
 | 24 | 2026-05-25 | Refactor Results Panel to log-style display | `e0a4e32`, `29e4980`, `db17226`, `2a1eebd` | `main` |
