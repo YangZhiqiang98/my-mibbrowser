@@ -137,6 +137,18 @@ describe('buildResultSession', () => {
     expect(session.varbinds[0].columnName).toBeTruthy()
   })
 
+  it('handles single-segment fallback OIDs without losing the label', () => {
+    const result = makeSnmpResult([
+      { oid: '1', value: 'root', type: 'OCTET STRING', isError: false }
+    ])
+
+    const session = buildResultSession('WALK', '1', result, [])
+
+    expect(session.varbinds).toHaveLength(1)
+    expect(session.varbinds[0].columnName).toBe('1')
+    expect(session.varbinds[0].instance).toBe('')
+  })
+
   it('formats TimeTicks values', () => {
     const ticks = 1 * 8640000 + 2 * 360000 + 3 * 6000 + 4 * 100 + 56
     const result = makeSnmpResult([

@@ -46,8 +46,15 @@ export function QueryPanel(): React.ReactElement {
   }, [queryOperation, setQueryOperation])
 
   const handleSend = useCallback(async () => {
-    if (!queryOid.trim()) {
+    const oids = queryOid.split(',').map(s => s.trim()).filter(s => s.length > 0)
+
+    if (oids.length === 0) {
       message.warning('Please enter an OID')
+      return
+    }
+
+    if (queryOperation === 'SET' && !setValue.trim()) {
+      message.warning('Please enter a value to set')
       return
     }
 
@@ -66,7 +73,6 @@ export function QueryPanel(): React.ReactElement {
     let resolveCtx: ReturnType<typeof initResolveContext> | null = null
 
     if (isStreaming) {
-      const oids = queryOid.split(',').map(s => s.trim()).filter(s => s.length > 0)
       initResultSession(queryOperation, oids[0] ?? '')
       resolveCtx = initResolveContext(mibTree)
 
@@ -82,8 +88,6 @@ export function QueryPanel(): React.ReactElement {
     }
 
     try {
-      const oids = queryOid.split(',').map(s => s.trim()).filter(s => s.length > 0)
-
       let result: SnmpResult
 
       switch (queryOperation) {
@@ -94,11 +98,6 @@ export function QueryPanel(): React.ReactElement {
           result = await window.api.snmp.getBulk(config, oids, config.bulkMaxRepetitions, config.bulkNonRepeaters)
           break
         case 'SET':
-          if (!setValue.trim()) {
-            message.warning('Please enter a value to set')
-            setIsQuerying(false)
-            return
-          }
           result = await window.api.snmp.set(config, oids.map(oid => ({
             oid,
             value: setValue,
@@ -119,7 +118,10 @@ export function QueryPanel(): React.ReactElement {
 
       if (result.success) {
         if (result.aborted) {
-          const session = buildResultSession(queryOperation, oids[0] ?? '', result, mibTree)
+          const streamedSession = isStreaming
+            ? useAppStore.getState().currentResult
+            : null
+          const session = streamedSession ?? buildResultSession(queryOperation, oids[0] ?? '', result, mibTree)
           setResult(session)
           setStatusMessage(
             `${queryOperation}: aborted at ${session.varbinds.length} row(s), ${result.responseTime}ms`

@@ -35,6 +35,7 @@ export function TrapConsolePanel(): React.ReactElement | null {
   const [starting, setStarting] = useState(false)
   const [stopping, setStopping] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const wasPanelOpenRef = useRef(false)
 
   useEffect(() => {
     if (!panelOpen || !autoScroll) return
@@ -47,6 +48,27 @@ export function TrapConsolePanel(): React.ReactElement | null {
     if (!panelOpen) return
     void window.api.trap.getStatus().then(setTrapReceiverStatus).catch(() => undefined)
   }, [panelOpen, setTrapReceiverStatus])
+
+  useEffect(() => {
+    if (!panelOpen) {
+      wasPanelOpenRef.current = false
+      return
+    }
+
+    if (status.listening) {
+      setPort(status.port)
+      setTransport(status.transport)
+      wasPanelOpenRef.current = true
+      return
+    }
+
+    if (!wasPanelOpenRef.current) {
+      setPort(status.port)
+      setTransport(snmpConfig.transport)
+      setCommunity(snmpConfig.community || 'public')
+    }
+    wasPanelOpenRef.current = true
+  }, [panelOpen, snmpConfig.community, snmpConfig.transport, status.listening, status.port, status.transport])
 
   const filteredEvents = useMemo(() => {
     const query = filterText.trim().toLowerCase()

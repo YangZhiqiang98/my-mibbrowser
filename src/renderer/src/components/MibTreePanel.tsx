@@ -337,7 +337,7 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
   }, [mibTree])
 
   const executeSnmpOperation = useCallback(async (
-    operation: 'GET' | 'GETNEXT' | 'GETBULK' | 'WALK' | 'BULK_WALK',
+    operation: 'GETBULK' | 'WALK' | 'BULK_WALK',
     node: MibTreeNodeData
   ) => {
     const oid = node.oid
@@ -376,12 +376,6 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
       let result: SnmpResult
 
       switch (operation) {
-        case 'GET':
-          result = await window.api.snmp.get(snmpConfig, [oid])
-          break
-        case 'GETNEXT':
-          result = await window.api.snmp.getNext(snmpConfig, [oid])
-          break
         case 'GETBULK': {
           // Column nodes: GETBULK semantics = iterate across all instances of
           // that column (equivalent to BULK_WALK), since a single getBulk only

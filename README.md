@@ -18,7 +18,7 @@ MIB Browser 是一个基于 Electron、React 和 TypeScript 构建的桌面 SNMP
 |---|---|
 | MIB 加载 | 支持文件/目录加载、依赖顺序解析、缺失依赖诊断、缓存复用 |
 | MIB 树 | 支持虚拟化浏览、搜索跳转、节点详情、右键 SNMP 操作 |
-| SNMP 查询 | 支持 v1/v2c/v3、GET、GETNEXT、GETBULK、WALK、BULK WALK、SET |
+| SNMP 查询 | 支持 v1/v2c/v3、GET、GETBULK、WALK、BULK WALK、SET |
 | 工具窗口 | GET、SET、Table Viewer 使用独立 Electron 工具窗口 |
 | 表查看/编辑 | 自动识别 table/entry/columns/instance，支持过滤、排序、分页、复制、CSV 导出、基础 SET 编辑，以及 RowStatus 表的 Add Row / Delete Row |
 | Trap / Inform 控制台 | 支持本地 UDP Trap/Inform 监听、启动/停止、实时事件查看、MIB 名称解析、过滤、复制、清空和自动滚动 |
@@ -130,7 +130,6 @@ my-mibbrowser/
 
 ## 当前限制
 
-- Trap/Inform 控制台尚未实现。
 - Agent Simulator 尚未实现。
 - 实时图表和趋势分析尚未实现。
 - SNMP over TCP、TLS/DTLS、TSM、DOCSIS DH 等不在当前 `net-snmp` 能力范围内。

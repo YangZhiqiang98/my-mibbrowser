@@ -80,8 +80,8 @@ function flattenMibTree(mibTree: readonly MibTreeNodeData[]): Array<{ oid: strin
  *    On a hit, columnName = node.name, instance = suffix after the matched node.
  * 2. On miss, fall back to splitting the OID at the last dot: columnName =
  *    the last-but-one segment (best label we can guess), instance = the final segment.
- * 3. Single-segment OIDs (rare) collapse to an empty column name and the
- *    whole OID as instance.
+ * 3. Single-segment OIDs (rare) use the whole OID as the column name and
+ *    an empty instance.
  */
 function resolveOidToColumn(
   varbindOid: string,
@@ -104,9 +104,9 @@ function resolveOidToColumn(
   const lastDot = oid.lastIndexOf('.')
   if (lastDot < 0) {
     return {
-      columnName: '?',
-      oidPrefix: '',
-      instance: oid
+      columnName: oid,
+      oidPrefix: oid,
+      instance: ''
     }
   }
   const prefix = oid.slice(0, lastDot)
