@@ -20,6 +20,7 @@ This directory contains guidelines for backend development. Fill in each file wi
 | [Quality Guidelines](./quality-guidelines.md) | Code standards, forbidden patterns | To fill |
 | [Logging Guidelines](./logging-guidelines.md) | Structured logging, log levels | To fill |
 | [App Settings](./app-settings.md) | App-level preference persistence and settings IPC contract | Filled |
+| [App Packaging](./app-packaging.md) | Electron packaging resources and runtime asset conventions | Filled |
 | [SNMP Guidelines](./snmp-guidelines.md) | OID comparison, leading-dot normalization, walk termination | Filled |
 
 ---

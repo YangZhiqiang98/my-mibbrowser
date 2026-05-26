@@ -1,11 +1,20 @@
 import { app, BrowserWindow, shell } from 'electron'
 import { join } from 'path'
+import { existsSync } from 'fs'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { registerIpcHandlers, loadMibCache } from './ipc/handlers'
 import { registerToolWindowHandlers } from './toolWindows'
 import { registerDebugLogForwarder } from './debugLogForwarder'
 
+function getWindowIconPath(): string | undefined {
+  const iconPath = app.isPackaged
+    ? join(process.resourcesPath, 'icon.png')
+    : join(__dirname, '../../build/icon.png')
+  return existsSync(iconPath) ? iconPath : undefined
+}
+
 function createWindow(): void {
+  const windowIconPath = getWindowIconPath()
   const mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
@@ -13,6 +22,7 @@ function createWindow(): void {
     minHeight: 700,
     show: false,
     autoHideMenuBar: true,
+    ...(windowIconPath ? { icon: windowIconPath } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false

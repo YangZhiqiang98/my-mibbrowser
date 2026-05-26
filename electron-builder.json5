@@ -5,6 +5,12 @@
   "directories": {
     "buildResources": "build"
   },
+  "extraResources": [
+    {
+      "from": "build/icon.png",
+      "to": "icon.png"
+    }
+  ],
   "files": [
     "!**/.vscode/*",
     "!src/*",
@@ -13,6 +19,7 @@
     "!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}"
   ],
   "win": {
+    "icon": "build/icon.ico",
     "target": [
       {
         "target": "nsis",
@@ -27,6 +34,7 @@
     "deleteAppDataOnUninstall": true
   },
   "mac": {
+    "icon": "build/icon.icns",
     "target": [
       {
         "target": "dmg",
@@ -35,6 +43,7 @@
     ]
   },
   "linux": {
+    "icon": "build/icon.png",
     "target": [
       {
         "target": "AppImage",

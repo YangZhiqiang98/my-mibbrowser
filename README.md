@@ -157,6 +157,7 @@ npx electron-builder
 
 ```text
 my-mibbrowser/
+├── build/                      # Electron builder resources, including app icons
 ├── src/
 │   ├── main/
 │   │   ├── index.ts              # Electron 主进程入口
