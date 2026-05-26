@@ -828,11 +828,33 @@ html, body, #root {
 }
 
 .table-viewer-wrap {
+  display: flex;
+  flex-direction: column;
   border-radius: 6px;
+  overflow: hidden;
 }
 
 .table-viewer-wrap .ant-table {
   font-size: 12px;
+}
+
+.table-viewer-wrap .ant-table-wrapper,
+.table-viewer-wrap .ant-spin-nested-loading,
+.table-viewer-wrap .ant-spin-container {
+  min-height: 0;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+}
+
+.table-viewer-wrap .ant-table-container {
+  min-height: 0;
+}
+
+.table-viewer-wrap .ant-table-pagination {
+  flex: 0 0 auto;
+  margin: 10px 0 0;
+  padding: 0 0 2px;
 }
 
 .table-viewer-wrap .ant-table-cell {

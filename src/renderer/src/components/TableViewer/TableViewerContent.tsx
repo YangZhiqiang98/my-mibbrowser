@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { App, Button, Checkbox, Dropdown, Empty, Input, Modal, Select, Space, Table, Tag, Tooltip } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import {
@@ -36,9 +36,14 @@ interface EditingCell {
   value: string
 }
 
+const TABLE_VIEWER_MIN_BODY_HEIGHT = 240
+const TABLE_VIEWER_FALLBACK_BODY_HEIGHT = 560
+const TABLE_VIEWER_SCROLLBAR_RESERVE = 18
+
 export function TableViewerContent({ context }: TableViewerContentProps): React.ReactElement {
   const { message: appMessage } = App.useApp()
   const target = useMemo(() => resolveTableTarget(context.seed as MibTreeNodeData), [context.seed])
+  const tableWrapRef = useRef<HTMLDivElement>(null)
   const [session, setSession] = useState<TableSession | null>(null)
   const [loading, setLoading] = useState(false)
   const [filterText, setFilterText] = useState('')
@@ -46,6 +51,7 @@ export function TableViewerContent({ context }: TableViewerContentProps): React.
   const [editingCell, setEditingCell] = useState<EditingCell | null>(null)
   const [savingCell, setSavingCell] = useState(false)
   const [showHex, setShowHex] = useState<Record<string, boolean>>({})
+  const [tableBodyHeight, setTableBodyHeight] = useState(TABLE_VIEWER_FALLBACK_BODY_HEIGHT)
 
   useEffect(() => {
     setSession(null)
@@ -121,6 +127,46 @@ export function TableViewerContent({ context }: TableViewerContentProps): React.
       return Object.values(row.cells).some((cell) => cell.value.toLowerCase().includes(query))
     })
   }, [filterText, session])
+
+  useEffect(() => {
+    const wrapper = tableWrapRef.current
+    if (!wrapper) return
+
+    let animationFrameId: number | null = null
+
+    const measure = (): void => {
+      const header = wrapper.querySelector<HTMLElement>('.ant-table-thead')
+      const pagination = wrapper.querySelector<HTMLElement>('.ant-pagination')
+      const headerHeight = header?.getBoundingClientRect().height ?? 56
+      const paginationHeight = pagination?.getBoundingClientRect().height ?? 48
+      const nextHeight = Math.max(
+        TABLE_VIEWER_MIN_BODY_HEIGHT,
+        Math.floor(wrapper.clientHeight - headerHeight - paginationHeight - TABLE_VIEWER_SCROLLBAR_RESERVE)
+      )
+      setTableBodyHeight((current) => (current === nextHeight ? current : nextHeight))
+    }
+
+    const scheduleMeasure = (): void => {
+      if (animationFrameId !== null) {
+        window.cancelAnimationFrame(animationFrameId)
+      }
+      animationFrameId = window.requestAnimationFrame(() => {
+        animationFrameId = null
+        measure()
+      })
+    }
+
+    scheduleMeasure()
+    const observer = new ResizeObserver(scheduleMeasure)
+    observer.observe(wrapper)
+
+    return () => {
+      if (animationFrameId !== null) {
+        window.cancelAnimationFrame(animationFrameId)
+      }
+      observer.disconnect()
+    }
+  }, [filteredRows.length, visibleColumns.length])
 
   const columns: ColumnsType<TableRowData> = useMemo(() => {
     const cols: ColumnsType<TableRowData> = [
@@ -303,7 +349,7 @@ export function TableViewerContent({ context }: TableViewerContentProps): React.
         <span>OID: <code>{target.entryNode.oid}</code></span>
       </div>
 
-      <div className="tool-window-table-wrap table-viewer-wrap">
+      <div className="tool-window-table-wrap table-viewer-wrap" ref={tableWrapRef}>
         <Table<TableRowData>
           rowKey="key"
           size="small"
@@ -311,7 +357,7 @@ export function TableViewerContent({ context }: TableViewerContentProps): React.
           dataSource={filteredRows}
           loading={loading}
           pagination={{ pageSize: 50, showSizeChanger: true }}
-          scroll={{ x: 'max-content', y: 'calc(100vh - 260px)' }}
+          scroll={{ x: 'max-content', y: tableBodyHeight }}
           locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No table rows loaded" /> }}
         />
       </div>
