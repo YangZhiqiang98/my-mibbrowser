@@ -25,6 +25,7 @@ let directoryModuleMap: Map<string, MibModule[]> = new Map()
 
 const CACHE_VERSION = 5 // Bump when cache format or parsing logic changes
 const CACHE_DIR_CONFIG_FILE = 'cache-dir-config.json'
+const APP_SETTINGS_FILE = 'app-settings.json'
 
 interface MibCache {
   version?: number
@@ -37,6 +38,11 @@ interface MibCache {
 
 interface CacheDirConfig {
   cacheDir: string
+}
+
+interface AppSettings {
+  lastHost?: string
+  lastSnmpConfig?: Partial<SnmpConfig>
 }
 
 /**
@@ -207,6 +213,10 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('profile:save', handleSaveProfile)
   ipcMain.handle('profile:load', handleLoadProfiles)
   ipcMain.handle('profile:delete', handleDeleteProfile)
+
+  // App settings
+  ipcMain.handle('settings:get-last-snmp-config', handleGetLastSnmpConfig)
+  ipcMain.handle('settings:set-last-snmp-config', handleSetLastSnmpConfig)
 
   // Debug mode
   ipcMain.handle('debug:get-enabled', handleDebugGetEnabled)
@@ -577,6 +587,56 @@ function handleDebugSetEnabled(_event: IpcMainInvokeEvent, enabled: boolean): bo
  */
 function getProfilesPath(): string {
   return join(app.getPath('userData'), 'connection-profiles.json')
+}
+
+function getAppSettingsPath(): string {
+  return join(app.getPath('userData'), APP_SETTINGS_FILE)
+}
+
+function readAppSettings(): AppSettings {
+  const settingsPath = getAppSettingsPath()
+  if (!existsSync(settingsPath)) return {}
+
+  try {
+    return JSON.parse(readFileSync(settingsPath, 'utf-8')) as AppSettings
+  } catch {
+    return {}
+  }
+}
+
+function writeAppSettings(settings: AppSettings): boolean {
+  try {
+    writeFileSync(getAppSettingsPath(), JSON.stringify(settings, null, 2), 'utf-8')
+    return true
+  } catch {
+    return false
+  }
+}
+
+function handleGetLastSnmpConfig(): Partial<SnmpConfig> | null {
+  const settings = readAppSettings()
+  if (settings.lastSnmpConfig) return settings.lastSnmpConfig
+
+  const host = settings.lastHost?.trim()
+  return host ? { host } : null
+}
+
+function handleSetLastSnmpConfig(_event: IpcMainInvokeEvent, config: SnmpConfig): Partial<SnmpConfig> | null {
+  const settings = readAppSettings()
+  const lastSnmpConfig: SnmpConfig = {
+    ...config,
+    host: config.host.trim()
+  }
+  if (!lastSnmpConfig.host) {
+    delete settings.lastSnmpConfig
+    delete settings.lastHost
+    writeAppSettings(settings)
+    return null
+  }
+
+  settings.lastSnmpConfig = lastSnmpConfig
+  delete settings.lastHost
+  return writeAppSettings(settings) ? lastSnmpConfig : null
 }
 
 /**

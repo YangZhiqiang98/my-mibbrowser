@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react'
+import React, { useEffect, useRef, useState, useCallback } from 'react'
 import { Input, Select, InputNumber, Button, Dropdown, Modal, Tooltip, App, Divider, Switch, Badge } from 'antd'
 import {
   SettingOutlined,
@@ -37,6 +37,8 @@ export function Toolbar(): React.ReactElement {
   const [profileName, setProfileName] = useState('')
   const [showSaveModal, setShowSaveModal] = useState(false)
   const [isTesting, setIsTesting] = useState(false)
+  const [lastConfigHydrated, setLastConfigHydrated] = useState(false)
+  const configEditedBeforeHydrationRef = useRef(false)
 
   const handleTestConnection = useCallback(async () => {
     if (!config.host.trim()) {
@@ -79,8 +81,15 @@ export function Toolbar(): React.ReactElement {
     }
   }, [message, setStatusMessage])
 
+  const handleConfigChange = useCallback((patch: Partial<SnmpConfig>): void => {
+    if (!lastConfigHydrated) {
+      configEditedBeforeHydrationRef.current = true
+    }
+    setConfig(patch)
+  }, [lastConfigHydrated, setConfig])
+
   const handleVersionChange = (version: string): void => {
-    setConfig({ version: version as SnmpConfig['version'] })
+    handleConfigChange({ version: version as SnmpConfig['version'] })
   }
 
   const handleDebugModeChange = async (enabled: boolean): Promise<void> => {
@@ -105,6 +114,33 @@ export function Toolbar(): React.ReactElement {
       .catch(() => undefined)
   }, [setDebugMode])
 
+  useEffect(() => {
+    let mounted = true
+    void window.api.settings.getLastSnmpConfig()
+      .then((lastConfig) => {
+        if (!mounted) return
+        if (lastConfig && !configEditedBeforeHydrationRef.current) {
+          setConfig(normalizeSnmpConfig(lastConfig))
+        }
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (mounted) setLastConfigHydrated(true)
+      })
+
+    return () => {
+      mounted = false
+    }
+  }, [setConfig])
+
+  useEffect(() => {
+    if (!lastConfigHydrated) return
+    const timeout = window.setTimeout(() => {
+      void window.api.settings.setLastSnmpConfig(config).catch(() => undefined)
+    }, 400)
+    return () => window.clearTimeout(timeout)
+  }, [config, lastConfigHydrated])
+
   const handleSaveProfile = async () => {
     if (!profileName.trim()) return
     const id = `profile-${Date.now()}`
@@ -121,7 +157,7 @@ export function Toolbar(): React.ReactElement {
   }
 
   const handleLoadProfile = (profile: { config: Partial<SnmpConfig> }): void => {
-    setConfig(normalizeSnmpConfig(profile.config))
+    handleConfigChange(normalizeSnmpConfig(profile.config))
   }
 
   const handleDeleteProfile = async (id: string) => {
@@ -159,7 +195,7 @@ export function Toolbar(): React.ReactElement {
         prefix={<LinkOutlined />}
         placeholder="IP address"
         value={config.host}
-        onChange={(e) => setConfig({ host: e.target.value })}
+        onChange={(e) => handleConfigChange({ host: e.target.value })}
         size="small"
       />
 
@@ -256,14 +292,14 @@ export function Toolbar(): React.ReactElement {
               <label>Host / IP</label>
               <Input
                 value={config.host}
-                onChange={(e) => setConfig({ host: e.target.value })}
+                onChange={(e) => handleConfigChange({ host: e.target.value })}
               />
             </div>
             <div className="query-form-item">
               <label>Port</label>
               <InputNumber
                 value={config.port}
-                onChange={(v) => setConfig({ port: v ?? 161 })}
+                onChange={(v) => handleConfigChange({ port: v ?? 161 })}
                 min={1}
                 max={65535}
                 style={{ width: '100%' }}
@@ -285,7 +321,7 @@ export function Toolbar(): React.ReactElement {
               <label>Transport</label>
               <Select
                 value={config.transport}
-                onChange={(v) => setConfig({ transport: v as SnmpTransport })}
+                onChange={(v) => handleConfigChange({ transport: v as SnmpTransport })}
                 options={[...SNMP_TRANSPORT_OPTIONS]}
               />
             </div>
@@ -294,7 +330,7 @@ export function Toolbar(): React.ReactElement {
                 <label>Community</label>
                 <Input
                   value={config.community}
-                  onChange={(e) => setConfig({ community: e.target.value })}
+                  onChange={(e) => handleConfigChange({ community: e.target.value })}
                 />
               </div>
             )}
@@ -309,7 +345,7 @@ export function Toolbar(): React.ReactElement {
                   <label>Security Level</label>
                   <Select
                     value={config.securityLevel}
-                    onChange={(v) => setConfig({ securityLevel: v as SecurityLevel })}
+                    onChange={(v) => handleConfigChange({ securityLevel: v as SecurityLevel })}
                     options={[
                       { label: 'noAuthNoPriv', value: 'noAuthNoPriv' },
                       { label: 'authNoPriv', value: 'authNoPriv' },
@@ -321,7 +357,7 @@ export function Toolbar(): React.ReactElement {
                   <label>Username</label>
                   <Input
                     value={config.username}
-                    onChange={(e) => setConfig({ username: e.target.value })}
+                    onChange={(e) => handleConfigChange({ username: e.target.value })}
                   />
                 </div>
 
@@ -331,7 +367,7 @@ export function Toolbar(): React.ReactElement {
                       <label>Auth Protocol</label>
                       <Select
                         value={config.authProtocol}
-                        onChange={(v) => setConfig({ authProtocol: v as AuthProtocol })}
+                        onChange={(v) => handleConfigChange({ authProtocol: v as AuthProtocol })}
                         options={[...SNMP_AUTH_PROTOCOL_OPTIONS]}
                       />
                     </div>
@@ -339,7 +375,7 @@ export function Toolbar(): React.ReactElement {
                       <label>Auth Password</label>
                       <Input.Password
                         value={config.authPassword}
-                        onChange={(e) => setConfig({ authPassword: e.target.value })}
+                        onChange={(e) => handleConfigChange({ authPassword: e.target.value })}
                       />
                     </div>
                   </>
@@ -351,7 +387,7 @@ export function Toolbar(): React.ReactElement {
                       <label>Priv Protocol</label>
                       <Select
                         value={config.privProtocol}
-                        onChange={(v) => setConfig({ privProtocol: v as PrivProtocol })}
+                        onChange={(v) => handleConfigChange({ privProtocol: v as PrivProtocol })}
                         options={[...SNMP_PRIV_PROTOCOL_OPTIONS]}
                       />
                     </div>
@@ -359,7 +395,7 @@ export function Toolbar(): React.ReactElement {
                       <label>Priv Password</label>
                       <Input.Password
                         value={config.privPassword}
-                        onChange={(e) => setConfig({ privPassword: e.target.value })}
+                        onChange={(e) => handleConfigChange({ privPassword: e.target.value })}
                       />
                     </div>
                   </>
@@ -384,7 +420,7 @@ export function Toolbar(): React.ReactElement {
               <label>Timeout (ms)</label>
               <InputNumber
                 value={config.timeout}
-                onChange={(v) => setConfig({ timeout: v ?? 5000 })}
+                onChange={(v) => handleConfigChange({ timeout: v ?? 5000 })}
                 min={1000}
                 max={30000}
                 step={1000}
@@ -395,7 +431,7 @@ export function Toolbar(): React.ReactElement {
               <label>Retries</label>
               <InputNumber
                 value={config.retries}
-                onChange={(v) => setConfig({ retries: v ?? 1 })}
+                onChange={(v) => handleConfigChange({ retries: v ?? 1 })}
                 min={0}
                 max={5}
                 style={{ width: '100%' }}
@@ -405,7 +441,7 @@ export function Toolbar(): React.ReactElement {
               <label>Bulk Max Repetitions</label>
               <InputNumber
                 value={config.bulkMaxRepetitions}
-                onChange={(v) => setConfig({ bulkMaxRepetitions: v ?? 10 })}
+                onChange={(v) => handleConfigChange({ bulkMaxRepetitions: v ?? 10 })}
                 min={1}
                 max={100}
                 style={{ width: '100%' }}
@@ -415,7 +451,7 @@ export function Toolbar(): React.ReactElement {
               <label>Bulk Non-repeaters</label>
               <InputNumber
                 value={config.bulkNonRepeaters}
-                onChange={(v) => setConfig({ bulkNonRepeaters: v ?? 0 })}
+                onChange={(v) => handleConfigChange({ bulkNonRepeaters: v ?? 0 })}
                 min={0}
                 max={20}
                 style={{ width: '100%' }}

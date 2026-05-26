@@ -39,6 +39,10 @@ declare global {
         load: () => Promise<Array<{ id: string; name: string; config: SnmpConfig }>>
         delete: (profileId: string) => Promise<void>
       }
+      settings: {
+        getLastSnmpConfig: () => Promise<Partial<SnmpConfig> | null>
+        setLastSnmpConfig: (config: SnmpConfig) => Promise<Partial<SnmpConfig> | null>
+      }
       debug: {
         getEnabled: () => Promise<boolean>
         setEnabled: (enabled: boolean) => Promise<boolean>

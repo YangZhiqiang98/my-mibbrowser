@@ -62,6 +62,14 @@ const api = {
       ipcRenderer.invoke('profile:delete', profileId)
   },
 
+  // App settings
+  settings: {
+    getLastSnmpConfig: (): Promise<Partial<SnmpConfig> | null> =>
+      ipcRenderer.invoke('settings:get-last-snmp-config'),
+    setLastSnmpConfig: (config: SnmpConfig): Promise<Partial<SnmpConfig> | null> =>
+      ipcRenderer.invoke('settings:set-last-snmp-config', config)
+  },
+
   // Debug mode
   debug: {
     getEnabled: (): Promise<boolean> => ipcRenderer.invoke('debug:get-enabled'),
