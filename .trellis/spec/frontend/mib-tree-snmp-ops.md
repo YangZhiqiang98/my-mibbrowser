@@ -174,6 +174,87 @@ Symptom: status bar count ticks up live (`WALK: 47 result(s)...`), but the resul
 
 ---
 
+## Constraint: Main-Window WALK / BULK_WALK Triggers Must Consume Progress Events
+
+Any main-window trigger that directly invokes `window.api.snmp.walk(...)` or `window.api.snmp.bulkWalk(...)` and displays the result in `ResultsPanel` must use the streaming session lifecycle. Waiting for the returned Promise and then calling `buildResultSession(...)` turns that trigger back into one-shot rendering even though the backend is already sending `snmp:walk-progress` events.
+
+### Required Pattern
+
+```typescript
+const isStreaming = operation === 'WALK' || operation === 'BULK_WALK'
+let removeProgressListener: (() => void) | null = null
+let resolveCtx: ReturnType<typeof initResolveContext> | null = null
+
+if (isStreaming) {
+  initResultSession(operation, oid)
+  resolveCtx = initResolveContext(mibTree)
+  removeProgressListener = window.api.snmp.onWalkProgress((rawVarbinds) => {
+    if (!resolveCtx) return
+    appendResultVarbinds(rawVarbinds.map((vb) => resolveVarbind(vb, resolveCtx, 0)))
+  })
+}
+
+try {
+  const result = await window.api.snmp.walk(snmpConfig, oid)
+  if (result.success && isStreaming) {
+    const currentSession = useAppStore.getState().currentResult
+    if (currentSession) {
+      setResult({
+        ...currentSession,
+        responseTime: result.responseTime,
+        timestamp: result.timestamp
+      })
+    }
+  }
+} finally {
+  removeProgressListener?.()
+  window.api.snmp.removeWalkListeners()
+}
+```
+
+### Why
+
+- The backend has one progress channel (`snmp:walk-progress`) for both WALK and BULK_WALK. A renderer trigger only streams if it subscribes before invoking the request.
+- The final `SnmpResult` still exists for response metadata and fallback correctness, but it is not the primary rendering path for streaming operations.
+- Multiple main-window entry points share the same Results Panel. If one uses `initResultSession` + `appendResultVarbinds` and another waits for the final response, users see inconsistent behavior for the same operation.
+
+### How to Apply
+
+- Query Panel WALK / BULK_WALK and MIB tree right-click WALK / BULK_WALK both use this lifecycle.
+- Non-streaming operations still use `buildResultSession(...)` as the single final write.
+- Abort for streaming operations should preserve the current streamed session first, falling back to `buildResultSession(...)` only if no streamed session exists.
+- Always unregister the progress listener in `finally`. Do not rely only on operation completion, because error and abort paths must not leave listeners behind.
+
+### Wrong vs Correct
+
+#### Wrong
+
+```typescript
+const result = await window.api.snmp.walk(snmpConfig, oid)
+const session = buildResultSession('WALK', oid, result, mibTree)
+setResult(session)
+```
+
+#### Correct
+
+```typescript
+initResultSession('WALK', oid)
+const removeProgressListener = window.api.snmp.onWalkProgress((batch) => {
+  appendResultVarbinds(batch.map((vb) => resolveVarbind(vb, resolveCtx, 0)))
+})
+const result = await window.api.snmp.walk(snmpConfig, oid)
+// finalize responseTime / timestamp on the current streamed session
+removeProgressListener()
+```
+
+### Tests / Verification
+
+- Typecheck must cover the preload listener signature and renderer consumers.
+- Manual smoke should verify both Query Panel and MIB tree right-click WALK / BULK_WALK show rows while `isQuerying === true`.
+- Stop / cancel should leave partial rows visible and remove the listener before the next operation.
+
+---
+
 ## Constraint: SNMP SET Authority Is the Device Response, Not the MIB `access` Field
 
 The MIB `access` attribute (`read-only`, `read-write`, `read-create`, `not-accessible`, `accessible-for-notify`) declares the **MIB author's stated semantics**, not the runtime writability of any particular device. A node marked `read-write` can be refused by a device that protects it through a separate mechanism; a node marked `read-only` can be writable on a vendor that ships extensions. The same gap applies to reads on `not-accessible` rows.

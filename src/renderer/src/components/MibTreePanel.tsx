@@ -26,7 +26,7 @@ import { useAppStore } from '../stores/appStore'
 import type { MibTreeNodeData } from '../types'
 import type { SnmpResult } from '../../../main/snmp/types'
 import { buildTreeFromNodes } from '../utils/mibTreeUtils'
-import { buildResultSession } from '../utils/resultColumns'
+import { buildResultSession, initResolveContext, resolveVarbind } from '../utils/resultColumns'
 import { isTableColumnChild } from '../utils/tableSession'
 import type { MibParseResult } from '../../../main/mib/types'
 
@@ -63,6 +63,8 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
   const setResult = useAppStore((s) => s.setResult)
   const setConnectionStatus = useAppStore((s) => s.setConnectionStatus)
   const setIsQuerying = useAppStore((s) => s.setIsQuerying)
+  const initResultSession = useAppStore((s) => s.initResultSession)
+  const appendResultVarbinds = useAppStore((s) => s.appendResultVarbinds)
 
   const [searchText, setSearchText] = useState('')
   const [expandedKeys, setExpandedKeys] = useState<string[]>([])
@@ -347,10 +349,28 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
     // Overwrite semantics (PR2): clear any previous session and flip the
     // loading flag synchronously so the user never sees stale rows merge
     // with new rows.
+    const isStreaming = operation === 'WALK' || operation === 'BULK_WALK'
     setResult(null)
     setIsQuerying(true)
     setConnectionStatus('connecting')
     setStatusMessage(`Executing ${operation} on ${oid}...`)
+
+    let removeProgressListener: (() => void) | null = null
+    let resolveCtx: ReturnType<typeof initResolveContext> | null = null
+
+    if (isStreaming) {
+      initResultSession(operation, oid)
+      resolveCtx = initResolveContext(mibTree)
+
+      removeProgressListener = window.api.snmp.onWalkProgress((rawVarbinds) => {
+        const ctx = resolveCtx
+        if (!ctx) return
+        const resolved = rawVarbinds.map((vb) => resolveVarbind(vb, ctx, 0))
+        appendResultVarbinds(resolved)
+        const currentCount = useAppStore.getState().currentResult?.varbinds.length ?? 0
+        setStatusMessage(`${operation}: ${currentCount} result(s)...`)
+      })
+    }
 
     try {
       let result: SnmpResult
@@ -396,10 +416,28 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
           // User-cancelled path: keep the collected varbinds (WALK / BULK_WALK
           // partial results) and surface "aborted at N rows" on the status
           // bar. No connectionStatus mutation (D5), no message toast (D4).
-          const session = buildResultSession(operation, oid, result, mibTree)
+          const streamedSession = isStreaming
+            ? useAppStore.getState().currentResult
+            : null
+          const session = streamedSession ?? buildResultSession(operation, oid, result, mibTree)
           setResult(session)
           setStatusMessage(
             `${operation}: aborted at ${session.varbinds.length} row(s), ${result.responseTime}ms`
+          )
+        } else if (isStreaming) {
+          const currentSession = useAppStore.getState().currentResult
+          if (currentSession) {
+            setResult({
+              ...currentSession,
+              responseTime: result.responseTime,
+              timestamp: result.timestamp
+            })
+          }
+          setConnectionStatus('connected')
+          const finalCount = currentSession?.varbinds.length ?? 0
+          const baseMsg = `${operation}: ${finalCount} result(s), ${result.responseTime}ms`
+          setStatusMessage(
+            finalCount === 0 ? `${baseMsg} — 本次操作结果为空` : baseMsg
           )
         } else {
           setConnectionStatus('connected')
@@ -424,8 +462,12 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
       setStatusMessage(`Error: ${errMsg}`)
     } finally {
       setIsQuerying(false)
+      if (removeProgressListener) {
+        removeProgressListener()
+      }
+      window.api.snmp.removeWalkListeners()
     }
-  }, [snmpConfig, mibTree, setResult, setConnectionStatus, setStatusMessage, setIsQuerying])
+  }, [snmpConfig, mibTree, setResult, setConnectionStatus, setStatusMessage, setIsQuerying, initResultSession, appendResultVarbinds])
 
   /**
    * Open the independent GET / SET tool window seeded for SET. The tool
