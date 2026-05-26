@@ -356,7 +356,7 @@ export function TableViewerContent({ context }: TableViewerContentProps): React.
           columns={columns}
           dataSource={filteredRows}
           loading={loading}
-          pagination={{ pageSize: 50, showSizeChanger: true }}
+          pagination={{ pageSize: 50, showSizeChanger: true, pageSizeOptions: [50, 100, 200] }}
           scroll={{ x: 'max-content', y: tableBodyHeight }}
           locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No table rows loaded" /> }}
         />
