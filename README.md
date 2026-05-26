@@ -20,7 +20,7 @@ MIB Browser 是一个基于 Electron、React 和 TypeScript 构建的桌面 SNMP
 | MIB 树 | 支持虚拟化浏览、搜索跳转、节点详情、右键 SNMP 操作 |
 | SNMP 查询 | 支持 v1/v2c/v3、GET、GETNEXT、GETBULK、WALK、BULK WALK、SET |
 | 工具窗口 | GET、SET、Table Viewer 使用独立 Electron 工具窗口 |
-| 表查看/编辑 | 自动识别 table/entry/columns/instance，支持过滤、排序、分页、复制、CSV 导出和基础 SET 编辑 |
+| 表查看/编辑 | 自动识别 table/entry/columns/instance，支持过滤、排序、分页、复制、CSV 导出、基础 SET 编辑，以及 RowStatus 表的 Add Row / Delete Row |
 | 连接配置 | 支持 Profiles，并自动恢复上次使用的完整设备配置 |
 | Debug Logs | Debug Mode 开启后，可在应用内查看 SNMP/MIB/IPC 调试日志 |
 
@@ -133,7 +133,7 @@ my-mibbrowser/
 - 实时图表和趋势分析尚未实现。
 - SNMP over TCP、TLS/DTLS、TSM、DOCSIS DH 等不在当前 `net-snmp` 能力范围内。
 - MIB 编译器已支持依赖解析和关键元数据保留，但还不是完整商业级 SMI 诊断器。
-- Table Viewer 支持查看和基础编辑，Add Row / Delete Row 等高级表行生命周期操作仍是后续增强方向。
+- Table Viewer 的 Add Row / Delete Row 仅支持带 RowStatus 语义的可创建/可删除表；复杂多阶段 createAndWait 流程仍是后续增强方向。
 
 ## 常见问题
 

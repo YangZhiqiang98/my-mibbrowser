@@ -2,10 +2,15 @@ import { describe, expect, it } from 'vitest'
 import type { SnmpVarbind } from '../../../main/snmp/types'
 import type { MibTreeNodeData } from '../types'
 import {
+  buildAddRowSetValues,
+  buildDeleteRowSetValue,
   buildTableSession,
   buildTableSetValue,
+  getTableRowLifecycle,
+  isRowStatusColumn,
   isTableColumnChild,
-  resolveTableTarget
+  resolveTableTarget,
+  validateTableInstanceSuffix
 } from './tableSession'
 
 const ifDescr: MibTreeNodeData = {
@@ -111,6 +116,59 @@ const baseTable: MibTreeNodeData = {
   syntax: 'SEQUENCE OF BaseEntry',
   module: 'BASE-MIB',
   children: [baseEntry]
+}
+
+const targetAddress: MibTreeNodeData = {
+  id: 'SNMP-TARGET-MIB::snmpTargetAddrTAddress',
+  name: 'snmpTargetAddrTAddress',
+  oid: '1.3.6.1.6.3.12.1.2.1.4',
+  kind: 'scalar',
+  access: 'read-create',
+  syntax: 'OCTET STRING',
+  module: 'SNMP-TARGET-MIB',
+  children: []
+}
+
+const targetTimeout: MibTreeNodeData = {
+  id: 'SNMP-TARGET-MIB::snmpTargetAddrTimeout',
+  name: 'snmpTargetAddrTimeout',
+  oid: '1.3.6.1.6.3.12.1.2.1.5',
+  kind: 'scalar',
+  access: 'read-create',
+  syntax: 'INTEGER',
+  module: 'SNMP-TARGET-MIB',
+  children: []
+}
+
+const targetRowStatus: MibTreeNodeData = {
+  id: 'SNMP-TARGET-MIB::snmpTargetAddrRowStatus',
+  name: 'snmpTargetAddrRowStatus',
+  oid: '1.3.6.1.6.3.12.1.2.1.9',
+  kind: 'scalar',
+  access: 'read-create',
+  syntax: 'RowStatus',
+  textualConvention: 'RowStatus',
+  enumValues: [
+    { name: 'active', value: 1 },
+    { name: 'notInService', value: 2 },
+    { name: 'notReady', value: 3 },
+    { name: 'createAndGo', value: 4 },
+    { name: 'createAndWait', value: 5 },
+    { name: 'destroy', value: 6 }
+  ],
+  module: 'SNMP-TARGET-MIB',
+  children: []
+}
+
+const targetEntry: MibTreeNodeData = {
+  id: 'SNMP-TARGET-MIB::snmpTargetAddrEntry',
+  name: 'snmpTargetAddrEntry',
+  oid: '1.3.6.1.6.3.12.1.2.1',
+  kind: 'entry',
+  access: 'not-accessible',
+  syntax: 'SnmpTargetAddrEntry',
+  module: 'SNMP-TARGET-MIB',
+  children: [targetAddress, targetTimeout, targetRowStatus]
 }
 
 describe('tableSession', () => {
@@ -271,6 +329,80 @@ describe('tableSession', () => {
       expect(isTableColumnChild(makeNode({ kind: 'table' }))).toBe(false)
       expect(isTableColumnChild(makeNode({ kind: 'group' }))).toBe(false)
       expect(isTableColumnChild(makeNode({ kind: 'notification' }))).toBe(false)
+    })
+  })
+
+  describe('row lifecycle helpers', () => {
+    it('detects RowStatus columns from textual convention, syntax, or enum values', () => {
+      const target = resolveTableTarget(targetEntry)!
+      const session = buildTableSession(target, [])
+      const rowStatus = session.columns.find((c) => c.name === 'snmpTargetAddrRowStatus')!
+
+      expect(isRowStatusColumn(rowStatus)).toBe(true)
+      expect(isRowStatusColumn({ ...rowStatus, syntax: 'INTEGER', textualConvention: undefined })).toBe(true)
+      expect(isRowStatusColumn(ifAdminStatus)).toBe(false)
+    })
+
+    it('reports lifecycle capability only for RowStatus-backed create/delete tables', () => {
+      const target = resolveTableTarget(targetEntry)!
+      const session = buildTableSession(target, [])
+      const lifecycle = getTableRowLifecycle(session.columns)
+
+      expect(lifecycle.rowStatusColumn?.name).toBe('snmpTargetAddrRowStatus')
+      expect(lifecycle.initialValueColumns.map((c) => c.name)).toEqual([
+        'snmpTargetAddrTAddress',
+        'snmpTargetAddrTimeout'
+      ])
+      expect(lifecycle.canCreate).toBe(true)
+      expect(lifecycle.canDelete).toBe(true)
+
+      const readWriteOnly = getTableRowLifecycle(buildTableSession(resolveTableTarget(ifTable)!, []).columns)
+      expect(readWriteOnly.canCreate).toBe(false)
+      expect(readWriteOnly.canDelete).toBe(false)
+    })
+
+    it('validates numeric instance suffixes for table row lifecycle operations', () => {
+      expect(validateTableInstanceSuffix('1')).toBeNull()
+      expect(validateTableInstanceSuffix('.10.110.109.115.49')).toBeNull()
+      expect(validateTableInstanceSuffix('')).toContain('required')
+      expect(validateTableInstanceSuffix('name')).toContain('numeric')
+    })
+
+    it('builds Add Row SET values with createAndGo RowStatus', () => {
+      const session = buildTableSession(resolveTableTarget(targetEntry)!, [])
+      const lifecycle = getTableRowLifecycle(session.columns)
+
+      expect(buildAddRowSetValues(lifecycle, '.10.110.109.115.49', {
+        '1.3.6.1.6.3.12.1.2.1.4': 'udp:127.0.0.1/162',
+        '1.3.6.1.6.3.12.1.2.1.5': '1500'
+      })).toEqual([
+        {
+          oid: '1.3.6.1.6.3.12.1.2.1.4.10.110.109.115.49',
+          type: 'OCTET STRING',
+          value: 'udp:127.0.0.1/162'
+        },
+        {
+          oid: '1.3.6.1.6.3.12.1.2.1.5.10.110.109.115.49',
+          type: 'INTEGER',
+          value: '1500'
+        },
+        {
+          oid: '1.3.6.1.6.3.12.1.2.1.9.10.110.109.115.49',
+          type: 'INTEGER',
+          value: '4'
+        }
+      ])
+    })
+
+    it('builds Delete Row SET value with destroy RowStatus', () => {
+      const session = buildTableSession(resolveTableTarget(targetEntry)!, [])
+      const lifecycle = getTableRowLifecycle(session.columns)
+
+      expect(buildDeleteRowSetValue(lifecycle, '10.110.109.115.49')).toEqual({
+        oid: '1.3.6.1.6.3.12.1.2.1.9.10.110.109.115.49',
+        type: 'INTEGER',
+        value: '6'
+      })
     })
   })
 })

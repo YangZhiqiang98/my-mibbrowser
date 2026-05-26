@@ -76,6 +76,7 @@ export function validateGetRow(row: Pick<SetRowDraft, 'rowId' | 'node' | 'instan
  */
 export function guessSetTypeFromSyntax(syntax: string): string {
   const upper = (syntax || '').toUpperCase()
+  if (upper === 'ROWSTATUS' || upper.includes('ROWSTATUS')) return 'INTEGER'
   if (upper.includes('INTEGER')) return 'INTEGER'
   if (upper.includes('OBJECT IDENTIFIER') || upper === 'OID') return 'OBJECT IDENTIFIER'
   if (upper.includes('IPADDRESS')) return 'IpAddress'

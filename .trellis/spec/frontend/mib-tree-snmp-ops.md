@@ -276,6 +276,85 @@ UI must therefore not pre-filter operations based on `node.access`. The only all
 
 ---
 
+## Constraint: Table Viewer Row Lifecycle Uses RowStatus Semantics Only
+
+Table Viewer Add Row / Delete Row is a table-specific workflow, not a general "insert/delete UI row" feature. It must only appear when the parsed table metadata exposes a usable `RowStatus` column. The device remains authoritative for whether the lifecycle SET actually succeeds.
+
+### 1. Scope / Trigger
+
+- Trigger: Add Row / Delete Row controls inside the dedicated Table Viewer tool window.
+- Applies only after `resolveTableTarget(...)` has built table/entry/column metadata and `buildTableSession(...)` has converted it into `TableColumnMeta[]`.
+- Does not apply to the generic GET / SET tool window or MIB-tree right-click SET action.
+
+### 2. Signatures
+
+```typescript
+getTableRowLifecycle(columns: TableColumnMeta[]): TableRowLifecycle
+buildAddRowSetValues(
+  lifecycle: TableRowLifecycle,
+  instance: string,
+  valuesByColumnKey: Record<string, string>
+): SnmpSetValue[]
+buildDeleteRowSetValue(lifecycle: TableRowLifecycle, instance: string): SnmpSetValue
+validateTableInstanceSuffix(instance: string): string | null
+```
+
+`TableRowLifecycle` contains `rowStatusColumn`, `initialValueColumns`, `canCreate`, and `canDelete`.
+
+### 3. Contracts
+
+- RowStatus detection is conservative:
+  - `textualConvention === 'RowStatus'`, or
+  - `syntax` contains `RowStatus`, or
+  - enum names include both `createAndGo` and `destroy`, or
+  - column name ends with `rowStatus` and enum names include `destroy`.
+- Add Row is enabled only when `canCreate === true`; it sends all non-empty initial values for editable non-RowStatus columns, followed by `RowStatus = createAndGo(4)`.
+- Delete Row is enabled only when `canDelete === true` and a row is selected; it sends exactly `RowStatus = destroy(6)` for that row's instance suffix.
+- Instance suffixes are numeric OID suffixes only, normalized by trimming leading/trailing dots. Display strings or table key names must be converted to their OID-encoded instance suffix before SET.
+- SNMP writes use the existing `window.api.snmp.set(config, values)` IPC path. No new IPC method is needed for row lifecycle operations.
+
+### 4. Validation & Error Matrix
+
+| Condition | Required behavior |
+|---|---|
+| No RowStatus column | Hide Add Row / Delete Row |
+| RowStatus exists but is not editable | Hide Add Row / Delete Row |
+| Add Row instance suffix is empty | Reject locally with `Instance suffix is required` |
+| Add Row / Delete Row instance suffix is non-numeric | Reject locally before SET |
+| Device rejects create/delete SET | Show error toast/status; keep Table Viewer open |
+| Create/delete SET succeeds | Show success toast/status and refresh the table |
+
+### 5. Good/Base/Bad Cases
+
+- Good: a `read-create` table with `snmpTargetAddrRowStatus` exposes Add Row and Delete Row; Add Row builds `<column oid>.<instance>` values plus `<rowStatus oid>.<instance> = 4`.
+- Base: a read-only status table has no RowStatus column, so it behaves exactly as a view-only/edit-cell table.
+- Bad: showing Add Row on a table merely because a column is `read-write`; without RowStatus, the app cannot know the device's row creation state machine.
+
+### 6. Tests Required
+
+- Unit tests for RowStatus detection from textual convention, syntax, and enum metadata.
+- Unit tests for Add Row varbind construction, including normalized instance suffixes and `createAndGo(4)`.
+- Unit tests for Delete Row varbind construction with `destroy(6)`.
+- Typecheck must cover the Table Viewer component path and `SnmpSetValue` payload shape.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```typescript
+const canAdd = columns.some((column) => column.access === 'read-write')
+```
+
+#### Correct
+
+```typescript
+const lifecycle = getTableRowLifecycle(session.columns)
+const canAdd = lifecycle.canCreate
+const values = buildAddRowSetValues(lifecycle, instance, valuesByColumnKey)
+```
+
+---
+
 ## Constraint: Right-Click GET / SET Open Electron Tool Windows; Others Fire Directly
 
 Right-click menu actions split into two execution shapes based on whether the operation needs an **instance suffix** to be useful:

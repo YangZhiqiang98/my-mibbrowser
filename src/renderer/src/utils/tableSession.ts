@@ -11,6 +11,7 @@ export interface TableColumnMeta {
   access: string
   type: string
   enumValues?: Array<{ name: string; value: number }>
+  textualConvention?: string
   displayHint?: string
 }
 
@@ -40,6 +41,13 @@ export interface TableTarget {
   columns: MibTreeNodeData[]
 }
 
+export interface TableRowLifecycle {
+  rowStatusColumn: TableColumnMeta | null
+  initialValueColumns: TableColumnMeta[]
+  canCreate: boolean
+  canDelete: boolean
+}
+
 function normalizeOid(oid: string): string {
   return (oid || '').replace(/^\.+/, '').replace(/\.+$/, '')
 }
@@ -64,6 +72,14 @@ function compareInstances(a: string, b: string): number {
     if (diff !== 0) return diff
   }
   return aParts.length - bParts.length
+}
+
+function normalizeEnumName(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]/g, '')
+}
+
+function normalizeInstanceSuffix(instance: string): string {
+  return instance.trim().replace(/^\.+/, '').replace(/\.+$/, '')
 }
 
 /**
@@ -109,6 +125,7 @@ export function buildTableSession(target: TableTarget, varbinds: SnmpVarbind[]):
     access: column.access,
     type: guessSetTypeFromSyntax(column.syntax),
     enumValues: column.enumValues,
+    textualConvention: column.textualConvention,
     displayHint: column.displayHint
   }))
   const rowsByInstance = new Map<string, TableRowData>()
@@ -146,12 +163,82 @@ export function isEditableColumn(column: Pick<TableColumnMeta, 'access'>): boole
   return column.access === 'read-write' || column.access === 'read-create'
 }
 
+export function isRowStatusColumn(
+  column: Pick<TableColumnMeta, 'name' | 'syntax' | 'enumValues' | 'textualConvention'>
+): boolean {
+  if (/^rowstatus$/i.test(column.textualConvention ?? '')) return true
+  if (/\browstatus\b/i.test(column.syntax)) return true
+
+  const enumNames = new Set((column.enumValues ?? []).map((item) => normalizeEnumName(item.name)))
+  if (enumNames.has('createandgo') && enumNames.has('destroy')) return true
+
+  const columnName = normalizeEnumName(column.name)
+  return columnName.endsWith('rowstatus') && enumNames.has('destroy')
+}
+
+export function getTableRowLifecycle(columns: TableColumnMeta[]): TableRowLifecycle {
+  const rowStatusColumn = columns.find(isRowStatusColumn) ?? null
+  const initialValueColumns = columns.filter((column) => isEditableColumn(column) && !isRowStatusColumn(column))
+  const hasReadCreateColumn = columns.some((column) => column.access === 'read-create')
+
+  return {
+    rowStatusColumn,
+    initialValueColumns,
+    canCreate: !!rowStatusColumn && isEditableColumn(rowStatusColumn) && hasReadCreateColumn,
+    canDelete: !!rowStatusColumn && isEditableColumn(rowStatusColumn)
+  }
+}
+
+export function validateTableInstanceSuffix(instance: string): string | null {
+  const normalized = normalizeInstanceSuffix(instance)
+  if (!normalized) return 'Instance suffix is required'
+  if (!/^\d+(\.\d+)*$/.test(normalized)) {
+    return `Instance suffix must be numeric OID segments, e.g. 1 or 10.110.109.115.49`
+  }
+  return null
+}
+
 export function buildTableSetValue(column: TableColumnMeta, instance: string, value: string): SnmpSetValue {
   return {
-    oid: buildFullOid(column.oid, instance),
+    oid: buildFullOid(column.oid, normalizeInstanceSuffix(instance)),
     type: column.type,
     value
   }
+}
+
+export function buildAddRowSetValues(
+  lifecycle: TableRowLifecycle,
+  instance: string,
+  valuesByColumnKey: Record<string, string>
+): SnmpSetValue[] {
+  if (!lifecycle.canCreate || !lifecycle.rowStatusColumn) {
+    throw new Error('This table does not expose a RowStatus-backed create operation')
+  }
+
+  const instanceError = validateTableInstanceSuffix(instance)
+  if (instanceError) throw new Error(instanceError)
+
+  const normalizedInstance = normalizeInstanceSuffix(instance)
+  const values = lifecycle.initialValueColumns.flatMap((column) => {
+    const value = valuesByColumnKey[column.key]?.trim() ?? ''
+    return value ? [buildTableSetValue(column, normalizedInstance, value)] : []
+  })
+
+  return [
+    ...values,
+    buildTableSetValue(lifecycle.rowStatusColumn, normalizedInstance, '4')
+  ]
+}
+
+export function buildDeleteRowSetValue(lifecycle: TableRowLifecycle, instance: string): SnmpSetValue {
+  if (!lifecycle.canDelete || !lifecycle.rowStatusColumn) {
+    throw new Error('This table does not expose a RowStatus-backed delete operation')
+  }
+
+  const instanceError = validateTableInstanceSuffix(instance)
+  if (instanceError) throw new Error(instanceError)
+
+  return buildTableSetValue(lifecycle.rowStatusColumn, normalizeInstanceSuffix(instance), '6')
 }
 
 function formatTableValue(value: SnmpVarbind['value'], type: string): string {

@@ -46,6 +46,7 @@ describe('SetMultiNodeDialog row utilities', () => {
 
   it('guesses SNMP SET type from MIB syntax', () => {
     expect(guessSetTypeFromSyntax('INTEGER { up(1) }')).toBe('INTEGER')
+    expect(guessSetTypeFromSyntax('RowStatus')).toBe('INTEGER')
     expect(guessSetTypeFromSyntax('OBJECT IDENTIFIER')).toBe('OBJECT IDENTIFIER')
     expect(guessSetTypeFromSyntax('IpAddress')).toBe('IpAddress')
     expect(guessSetTypeFromSyntax('DisplayString')).toBe('OCTET STRING')

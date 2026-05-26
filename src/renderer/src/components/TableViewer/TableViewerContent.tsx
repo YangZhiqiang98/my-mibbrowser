@@ -3,8 +3,10 @@ import { App, Button, Checkbox, Dropdown, Empty, Input, Modal, Select, Space, Ta
 import type { ColumnsType } from 'antd/es/table'
 import {
   CopyOutlined,
+  DeleteOutlined,
   DownloadOutlined,
   EyeOutlined,
+  PlusOutlined,
   ReloadOutlined,
   SaveOutlined,
   StopOutlined
@@ -13,9 +15,13 @@ import type { SnmpToolWindowContext } from '../../../../shared/toolWindowTypes'
 import type { MibTreeNodeData } from '../../types'
 import {
   buildTableSession,
+  buildAddRowSetValues,
+  buildDeleteRowSetValue,
   buildTableSetValue,
+  getTableRowLifecycle,
   isEditableColumn,
   resolveTableTarget,
+  validateTableInstanceSuffix,
   type TableCellData,
   type TableColumnMeta,
   type TableRowData,
@@ -41,21 +47,30 @@ const TABLE_VIEWER_FALLBACK_BODY_HEIGHT = 560
 const TABLE_VIEWER_SCROLLBAR_RESERVE = 18
 
 export function TableViewerContent({ context }: TableViewerContentProps): React.ReactElement {
-  const { message: appMessage } = App.useApp()
+  const { message: appMessage, modal } = App.useApp()
   const target = useMemo(() => resolveTableTarget(context.seed as MibTreeNodeData), [context.seed])
   const tableWrapRef = useRef<HTMLDivElement>(null)
   const [session, setSession] = useState<TableSession | null>(null)
   const [loading, setLoading] = useState(false)
   const [filterText, setFilterText] = useState('')
   const [visibleColumnKeys, setVisibleColumnKeys] = useState<string[]>([])
+  const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([])
   const [editingCell, setEditingCell] = useState<EditingCell | null>(null)
   const [savingCell, setSavingCell] = useState(false)
+  const [addRowOpen, setAddRowOpen] = useState(false)
+  const [newRowInstance, setNewRowInstance] = useState('')
+  const [newRowValues, setNewRowValues] = useState<Record<string, string>>({})
+  const [savingRowLifecycle, setSavingRowLifecycle] = useState(false)
   const [showHex, setShowHex] = useState<Record<string, boolean>>({})
   const [tableBodyHeight, setTableBodyHeight] = useState(TABLE_VIEWER_FALLBACK_BODY_HEIGHT)
 
   useEffect(() => {
     setSession(null)
     setFilterText('')
+    setSelectedRowKeys([])
+    setAddRowOpen(false)
+    setNewRowInstance('')
+    setNewRowValues({})
     setShowHex({})
     if (target) {
       setVisibleColumnKeys(target.columns.map((column) => column.oid))
@@ -88,6 +103,7 @@ export function TableViewerContent({ context }: TableViewerContentProps): React.
 
       const next = buildTableSession(target, result.varbinds)
       setSession(next)
+      setSelectedRowKeys((keys) => keys.filter((key) => next.rows.some((row) => row.key === key)))
       publishStatusToMain({
         connectionStatus: result.aborted ? undefined : 'connected',
         statusMessage: result.aborted
@@ -110,6 +126,17 @@ export function TableViewerContent({ context }: TableViewerContentProps): React.
   useEffect(() => {
     fetchTable().catch(() => {})
   }, [fetchTable])
+
+  const lifecycle = useMemo(() => {
+    if (!session) return null
+    return getTableRowLifecycle(session.columns)
+  }, [session])
+
+  const selectedRow = useMemo(() => {
+    const selectedKey = selectedRowKeys[0]
+    if (!session || selectedKey === undefined) return null
+    return session.rows.find((row) => row.key === selectedKey) ?? null
+  }, [selectedRowKeys, session])
 
   const visibleColumns = useMemo(() => {
     if (!session) return []
@@ -289,6 +316,106 @@ export function TableViewerContent({ context }: TableViewerContentProps): React.
     }
   }, [context.snmpConfig, editingCell])
 
+  const openAddRow = useCallback(() => {
+    if (!lifecycle?.canCreate) return
+    setNewRowInstance('')
+    setNewRowValues({})
+    setAddRowOpen(true)
+  }, [lifecycle])
+
+  const handleAddRow = useCallback(async () => {
+    if (!lifecycle?.canCreate) return
+
+    const instanceError = validateTableInstanceSuffix(newRowInstance)
+    if (instanceError) {
+      appMessage.error(instanceError)
+      return
+    }
+
+    let values
+    try {
+      values = buildAddRowSetValues(lifecycle, newRowInstance, newRowValues)
+    } catch (error) {
+      appMessage.error(error instanceof Error ? error.message : String(error))
+      return
+    }
+
+    setSavingRowLifecycle(true)
+    try {
+      const result = await window.api.snmp.set(context.snmpConfig, values)
+      if (!result.success) {
+        publishToastToMain('error', `Add row failed: ${result.error}`)
+        publishStatusToMain({
+          connectionStatus: 'error',
+          statusMessage: `Add row ${newRowInstance}: ${result.error}`
+        })
+        return
+      }
+
+      publishStatusToMain({
+        connectionStatus: 'connected',
+        statusMessage: `Add row ${newRowInstance}: ok`
+      })
+      publishToastToMain('success', `Add row ${newRowInstance} succeeded`)
+      setAddRowOpen(false)
+      setNewRowInstance('')
+      setNewRowValues({})
+      await fetchTable()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      publishToastToMain('error', `Add row failed: ${message}`)
+      publishStatusToMain({
+        connectionStatus: 'error',
+        statusMessage: `Add row ${newRowInstance}: ${message}`
+      })
+    } finally {
+      setSavingRowLifecycle(false)
+    }
+  }, [appMessage, context.snmpConfig, fetchTable, lifecycle, newRowInstance, newRowValues])
+
+  const handleDeleteRow = useCallback(() => {
+    if (!lifecycle?.canDelete || !selectedRow) return
+
+    modal.confirm({
+      title: `Delete row ${selectedRow.instance}`,
+      content: `SET ${lifecycle.rowStatusColumn?.name}.${selectedRow.instance} = destroy(6)`,
+      okText: 'Delete',
+      okButtonProps: { danger: true, icon: <DeleteOutlined /> },
+      onOk: async () => {
+        setSavingRowLifecycle(true)
+        try {
+          const value = buildDeleteRowSetValue(lifecycle, selectedRow.instance)
+          const result = await window.api.snmp.set(context.snmpConfig, [value])
+          if (!result.success) {
+            publishToastToMain('error', `Delete row failed: ${result.error}`)
+            publishStatusToMain({
+              connectionStatus: 'error',
+              statusMessage: `Delete row ${selectedRow.instance}: ${result.error}`
+            })
+            return
+          }
+
+          publishStatusToMain({
+            connectionStatus: 'connected',
+            statusMessage: `Delete row ${selectedRow.instance}: ok`
+          })
+          publishToastToMain('success', `Delete row ${selectedRow.instance} succeeded`)
+          setSelectedRowKeys([])
+          await fetchTable()
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          publishToastToMain('error', `Delete row failed: ${message}`)
+          publishStatusToMain({
+            connectionStatus: 'error',
+            statusMessage: `Delete row ${selectedRow.instance}: ${message}`
+          })
+        } finally {
+          setSavingRowLifecycle(false)
+        }
+      }
+    })
+  }, [context.snmpConfig, fetchTable, lifecycle, modal, selectedRow])
+
   if (!target) {
     return (
       <div className="tool-window-panel">
@@ -327,6 +454,21 @@ export function TableViewerContent({ context }: TableViewerContentProps): React.
           >
             <Button icon={<EyeOutlined />}>Columns</Button>
           </Dropdown>
+          {lifecycle?.canCreate && (
+            <Button icon={<PlusOutlined />} onClick={openAddRow} disabled={loading || savingRowLifecycle}>
+              Add Row
+            </Button>
+          )}
+          {lifecycle?.canDelete && (
+            <Button
+              danger
+              icon={<DeleteOutlined />}
+              onClick={handleDeleteRow}
+              disabled={loading || savingRowLifecycle || !selectedRow}
+            >
+              Delete Row
+            </Button>
+          )}
           <Button icon={<CopyOutlined />} onClick={handleCopyRows} disabled={!session || filteredRows.length === 0}>
             Copy
           </Button>
@@ -356,6 +498,11 @@ export function TableViewerContent({ context }: TableViewerContentProps): React.
           columns={columns}
           dataSource={filteredRows}
           loading={loading}
+          rowSelection={lifecycle?.canDelete ? {
+            type: 'radio',
+            selectedRowKeys,
+            onChange: (keys) => setSelectedRowKeys(keys)
+          } : undefined}
           pagination={{ pageSize: 50, showSizeChanger: true, pageSizeOptions: [50, 100, 200] }}
           scroll={{ x: 'max-content', y: tableBodyHeight }}
           locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No table rows loaded" /> }}
@@ -389,6 +536,62 @@ export function TableViewerContent({ context }: TableViewerContentProps): React.
                 onChange={(event) => setEditingCell({ ...editingCell, value: event.target.value })}
               />
             )}
+          </Space>
+        )}
+      </Modal>
+
+      <Modal
+        title={`Add row${lifecycle?.rowStatusColumn ? ` via ${lifecycle.rowStatusColumn.name}` : ''}`}
+        open={addRowOpen}
+        onOk={handleAddRow}
+        okText="Add Row"
+        okButtonProps={{ icon: <PlusOutlined />, loading: savingRowLifecycle }}
+        onCancel={() => setAddRowOpen(false)}
+      >
+        {lifecycle && (
+          <Space direction="vertical" style={{ width: '100%' }}>
+            <div className="table-viewer-edit-meta">
+              <div>Entry: <code>{target.entryNode.name}</code></div>
+              {lifecycle.rowStatusColumn && (
+                <div>RowStatus: <code>{lifecycle.rowStatusColumn.oid}.&lt;instance&gt; = createAndGo(4)</code></div>
+              )}
+            </div>
+            <Input
+              placeholder="Instance suffix"
+              value={newRowInstance}
+              status={validateTableInstanceSuffix(newRowInstance) && newRowInstance ? 'error' : undefined}
+              onChange={(event) => setNewRowInstance(event.target.value)}
+            />
+            {lifecycle.initialValueColumns.map((column) => (
+              <Space key={column.key} direction="vertical" size={4} style={{ width: '100%' }}>
+                <span className="table-viewer-add-row-label">
+                  {column.name}
+                  <code>{column.type}</code>
+                </span>
+                {getEnumOptions(column).length > 0 ? (
+                  <Select
+                    allowClear
+                    placeholder={`${column.name} value`}
+                    value={newRowValues[column.key] || undefined}
+                    onChange={(value) => setNewRowValues((current) => ({
+                      ...current,
+                      [column.key]: value ?? ''
+                    }))}
+                    style={{ width: '100%' }}
+                    options={getEnumOptions(column)}
+                  />
+                ) : (
+                  <Input
+                    placeholder={`${column.name} value`}
+                    value={newRowValues[column.key] ?? ''}
+                    onChange={(event) => setNewRowValues((current) => ({
+                      ...current,
+                      [column.key]: event.target.value
+                    }))}
+                  />
+                )}
+              </Space>
+            ))}
           </Space>
         )}
       </Modal>
