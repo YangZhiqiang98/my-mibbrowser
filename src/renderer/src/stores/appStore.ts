@@ -1,6 +1,9 @@
 import { create } from 'zustand'
 import type { ProfileItem, MibTreeNodeData, ResultSession, ResultVarbind } from '../types'
 import type { SnmpConfig, SnmpOperation } from '../../../main/snmp/types'
+import type { DebugLogEntry } from '../../../shared/debugLogTypes'
+
+export const DEBUG_LOG_ENTRY_LIMIT = 500
 
 interface AppState {
   // MIB tree
@@ -30,6 +33,9 @@ interface AppState {
   connectionStatus: 'disconnected' | 'connecting' | 'connected' | 'error'
   statusMessage: string
   debugMode: boolean
+  debugLogs: DebugLogEntry[]
+  debugLogPanelOpen: boolean
+  debugLogAutoScroll: boolean
 
   // Actions
   setMibTree: (tree: MibTreeNodeData[]) => void
@@ -50,6 +56,10 @@ interface AppState {
   setConnectionStatus: (status: AppState['connectionStatus']) => void
   setStatusMessage: (msg: string) => void
   setDebugMode: (enabled: boolean) => void
+  appendDebugLog: (entry: DebugLogEntry) => void
+  clearDebugLogs: () => void
+  setDebugLogPanelOpen: (open: boolean) => void
+  setDebugLogAutoScroll: (enabled: boolean) => void
 }
 
 const defaultConfig: SnmpConfig = {
@@ -106,6 +116,9 @@ export const useAppStore = create<AppState>((set) => ({
   connectionStatus: 'disconnected',
   statusMessage: 'Ready',
   debugMode: false,
+  debugLogs: [],
+  debugLogPanelOpen: false,
+  debugLogAutoScroll: true,
 
   // MIB actions
   setMibTree: (tree) => set({ mibTree: tree }),
@@ -159,5 +172,14 @@ export const useAppStore = create<AppState>((set) => ({
   // Status actions
   setConnectionStatus: (status) => set({ connectionStatus: status }),
   setStatusMessage: (msg) => set({ statusMessage: msg }),
-  setDebugMode: (enabled) => set({ debugMode: enabled })
+  setDebugMode: (enabled) => set({ debugMode: enabled }),
+  appendDebugLog: (entry) =>
+    set((state) => {
+      const debugLogs = [...state.debugLogs, entry]
+      if (debugLogs.length <= DEBUG_LOG_ENTRY_LIMIT) return { debugLogs }
+      return { debugLogs: debugLogs.slice(debugLogs.length - DEBUG_LOG_ENTRY_LIMIT) }
+    }),
+  clearDebugLogs: () => set({ debugLogs: [] }),
+  setDebugLogPanelOpen: (open) => set({ debugLogPanelOpen: open }),
+  setDebugLogAutoScroll: (enabled) => set({ debugLogAutoScroll: enabled })
 }))

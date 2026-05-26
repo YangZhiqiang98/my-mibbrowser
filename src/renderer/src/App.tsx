@@ -6,6 +6,7 @@ import { MibTreePanel } from './components/MibTreePanel'
 import { QueryPanel } from './components/QueryPanel'
 import { ResultsPanel } from './components/ResultsPanel'
 import { StatusBar } from './components/StatusBar'
+import { DebugLogsPanel } from './components/DebugLogsPanel'
 import { normalizeSnmpConfig, useAppStore } from './stores/appStore'
 import { buildTreeFromNodes } from './utils/mibTreeUtils'
 import type { SnmpToolWindowToast } from '../../shared/toolWindowTypes'
@@ -81,6 +82,7 @@ export default function App(): React.ReactElement {
     <ConfigProvider locale={zhCN} theme={{ token: { colorPrimary: '#1890ff' } }}>
       <AntApp>
         <MainWindowToolBridge />
+        <DebugLogBridge />
         <div className="app-container">
           <Toolbar />
           <div className="main-content">
@@ -94,11 +96,24 @@ export default function App(): React.ReactElement {
               <ResultsPanel />
             </div>
           </div>
+          <DebugLogsPanel />
           <StatusBar />
         </div>
       </AntApp>
     </ConfigProvider>
   )
+}
+
+function DebugLogBridge(): null {
+  const appendDebugLog = useAppStore((s) => s.appendDebugLog)
+
+  useEffect(() => {
+    return window.api.debug.onEntry((entry) => {
+      appendDebugLog(entry)
+    })
+  }, [appendDebugLog])
+
+  return null
 }
 
 function MainWindowToolBridge(): null {

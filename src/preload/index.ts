@@ -9,6 +9,7 @@ import type {
   SnmpToolWindowToast,
   ToolWindowMibNode
 } from '../shared/toolWindowTypes'
+import type { DebugLogEntry } from '../shared/debugLogTypes'
 
 /**
  * API exposed to the renderer process via contextBridge
@@ -64,7 +65,12 @@ const api = {
   // Debug mode
   debug: {
     getEnabled: (): Promise<boolean> => ipcRenderer.invoke('debug:get-enabled'),
-    setEnabled: (enabled: boolean): Promise<boolean> => ipcRenderer.invoke('debug:set-enabled', enabled)
+    setEnabled: (enabled: boolean): Promise<boolean> => ipcRenderer.invoke('debug:set-enabled', enabled),
+    onEntry: (callback: (entry: DebugLogEntry) => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, entry: DebugLogEntry) => callback(entry)
+      ipcRenderer.on('debug:entry', listener)
+      return () => ipcRenderer.removeListener('debug:entry', listener)
+    }
   },
 
   // Export

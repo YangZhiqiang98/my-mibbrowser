@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react'
-import { Input, Select, InputNumber, Button, Dropdown, Modal, Tooltip, App, Divider, Switch } from 'antd'
+import { Input, Select, InputNumber, Button, Dropdown, Modal, Tooltip, App, Divider, Switch, Badge } from 'antd'
 import {
   SettingOutlined,
   SaveOutlined,
@@ -8,7 +8,8 @@ import {
   GlobalOutlined,
   ApiOutlined,
   LinkOutlined,
-  StopOutlined
+  StopOutlined,
+  FileTextOutlined
 } from '@ant-design/icons'
 import { normalizeSnmpConfig, useAppStore } from '../stores/appStore'
 import type { SnmpConfig, SecurityLevel, AuthProtocol, PrivProtocol, SnmpTransport } from '../../../main/snmp/types'
@@ -29,6 +30,9 @@ export function Toolbar(): React.ReactElement {
   const setStatusMessage = useAppStore((s) => s.setStatusMessage)
   const debugMode = useAppStore((s) => s.debugMode)
   const setDebugMode = useAppStore((s) => s.setDebugMode)
+  const debugLogCount = useAppStore((s) => s.debugLogs.length)
+  const debugLogPanelOpen = useAppStore((s) => s.debugLogPanelOpen)
+  const setDebugLogPanelOpen = useAppStore((s) => s.setDebugLogPanelOpen)
   const [showConnectionSettings, setShowConnectionSettings] = useState(false)
   const [profileName, setProfileName] = useState('')
   const [showSaveModal, setShowSaveModal] = useState(false)
@@ -85,6 +89,7 @@ export function Toolbar(): React.ReactElement {
     try {
       const actual = await window.api.debug.setEnabled(enabled)
       setDebugMode(actual)
+      if (actual) setDebugLogPanelOpen(true)
       setStatusMessage(`Debug mode ${actual ? 'enabled' : 'disabled'}`)
     } catch (error) {
       setDebugMode(previous)
@@ -164,6 +169,17 @@ export function Toolbar(): React.ReactElement {
           size="small"
           onClick={() => setShowConnectionSettings(true)}
         />
+      </Tooltip>
+
+      <Tooltip title="Debug logs">
+        <Badge count={debugLogCount} size="small" overflowCount={999}>
+          <Button
+            icon={<FileTextOutlined />}
+            size="small"
+            type={debugLogPanelOpen ? 'primary' : 'default'}
+            onClick={() => setDebugLogPanelOpen(!debugLogPanelOpen)}
+          />
+        </Badge>
       </Tooltip>
 
       {isQuerying && (

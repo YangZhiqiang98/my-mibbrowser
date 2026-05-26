@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { normalizeSnmpConfig } from './appStore'
+import { DEBUG_LOG_ENTRY_LIMIT, normalizeSnmpConfig, useAppStore } from './appStore'
 
 describe('normalizeSnmpConfig', () => {
   it('keeps old profiles compatible by defaulting transport', () => {
@@ -29,5 +29,42 @@ describe('normalizeSnmpConfig', () => {
     expect(config.authProtocol).toBe('sha512')
     expect(config.privProtocol).toBe('aes256r')
     expect(config.transport).toBe('udp6')
+  })
+})
+
+describe('debug log state', () => {
+  it('keeps only the most recent debug log entries', () => {
+    useAppStore.setState({ debugLogs: [] })
+
+    for (let index = 1; index <= DEBUG_LOG_ENTRY_LIMIT + 5; index += 1) {
+      useAppStore.getState().appendDebugLog({
+        id: index,
+        timestamp: index,
+        level: 'debug',
+        scope: 'test',
+        message: `entry ${index}`
+      })
+    }
+
+    const logs = useAppStore.getState().debugLogs
+    expect(logs).toHaveLength(DEBUG_LOG_ENTRY_LIMIT)
+    expect(logs[0].id).toBe(6)
+    expect(logs[logs.length - 1].id).toBe(DEBUG_LOG_ENTRY_LIMIT + 5)
+  })
+
+  it('clears debug log entries', () => {
+    useAppStore.setState({
+      debugLogs: [{
+        id: 1,
+        timestamp: 1,
+        level: 'debug',
+        scope: 'test',
+        message: 'entry'
+      }]
+    })
+
+    useAppStore.getState().clearDebugLogs()
+
+    expect(useAppStore.getState().debugLogs).toEqual([])
   })
 })

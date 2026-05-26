@@ -69,12 +69,14 @@ MIB Browser 是一个基于 Electron、React 和 TypeScript 构建的桌面 SNMP
 
 ### Debug Mode
 
-连接设置中提供 Debug Mode 开关。开启后，主进程会输出更详细的调试日志，包括：
+连接设置中提供 Debug Mode 开关。开启后，应用内 Debug Logs 面板会输出更详细的调试日志，包括：
 
 - SNMP 请求开始、结束、耗时、返回数量和错误。
 - SNMP 请求参数，包括 community、SNMPv3 密码和 SET 值。
 - MIB 文件/目录加载过程和解析摘要。
 - IPC 调用、工具窗口打开和主窗口结果回传。
+
+顶部工具栏的 Debug Logs 按钮可打开/关闭日志面板。面板支持复制、清空和自动滚动，最多保留最近 500 条日志。主进程控制台只作为开发运行时的辅助输出。
 
 Debug Mode 默认关闭。它是本地诊断模式，可能输出敏感连接信息，只应在可信环境中开启。
 
@@ -201,7 +203,7 @@ my-mibbrowser/
 1. 打开连接设置。
 2. 开启 Debug Mode。
 3. 再执行连接测试或 SNMP 请求。
-4. 查看主进程控制台中的 SNMP 参数、耗时、错误和返回数量。
+4. 查看应用内 Debug Logs 面板中的 SNMP 参数、耗时、错误和返回数量。
 
 注意：Debug Mode 会打印 community、SNMPv3 密码和 SET 值。
 

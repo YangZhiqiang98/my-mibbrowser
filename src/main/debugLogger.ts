@@ -1,6 +1,11 @@
+import type { DebugLogEntry, DebugLogLevel } from '../shared/debugLogTypes'
+
 let debugModeEnabled = false
+let mainConsoleOutputEnabled = shouldEnableMainConsoleOutput()
 
 const MAX_ARRAY_ITEMS = 20
+let debugLogSequence = 0
+const debugLogSubscribers = new Set<(entry: DebugLogEntry) => void>()
 
 export function setDebugMode(enabled: boolean): void {
   debugModeEnabled = enabled
@@ -10,14 +15,26 @@ export function isDebugModeEnabled(): boolean {
   return debugModeEnabled
 }
 
+export function subscribeDebugLogs(callback: (entry: DebugLogEntry) => void): () => void {
+  debugLogSubscribers.add(callback)
+  return () => {
+    debugLogSubscribers.delete(callback)
+  }
+}
+
+export function setMainConsoleDebugOutput(enabled: boolean): void {
+  mainConsoleOutputEnabled = enabled
+}
+
+export function isMainConsoleDebugOutputEnabled(): boolean {
+  return mainConsoleOutputEnabled
+}
+
 export function debugLog(scope: string, message: string, context?: unknown): void {
   if (!debugModeEnabled) return
   const payload = context === undefined ? undefined : prepareForDebugLog(context)
-  if (payload === undefined) {
-    console.debug(`[debug:${scope}] ${message}`)
-    return
-  }
-  console.debug(`[debug:${scope}] ${message}`, payload)
+  writeDebugToMainConsole(scope, message, payload)
+  emitDebugEntry('debug', scope, message, payload)
 }
 
 export function debugError(scope: string, message: string, error: unknown, context?: unknown): void {
@@ -26,7 +43,8 @@ export function debugError(scope: string, message: string, error: unknown, conte
     ...(isPlainRecord(context) ? context : { context }),
     error: formatError(error)
   })
-  console.error(`[debug:${scope}] ${message}`, payload)
+  writeErrorToMainConsole(scope, message, payload)
+  emitDebugEntry('error', scope, message, payload)
 }
 
 export function prepareForDebugLog(value: unknown): unknown {
@@ -79,4 +97,41 @@ function formatError(error: unknown): Record<string, unknown> {
     }
   }
   return { message: String(error) }
+}
+
+function emitDebugEntry(level: DebugLogLevel, scope: string, message: string, payload: unknown): void {
+  const entry: DebugLogEntry = {
+    id: ++debugLogSequence,
+    timestamp: Date.now(),
+    level,
+    scope,
+    message,
+    ...(payload === undefined ? {} : { payload })
+  }
+
+  for (const subscriber of debugLogSubscribers) {
+    try {
+      subscriber(entry)
+    } catch {
+      // Debug subscribers are observational; failures must not affect app behavior.
+    }
+  }
+}
+
+function writeDebugToMainConsole(scope: string, message: string, payload: unknown): void {
+  if (!mainConsoleOutputEnabled) return
+  if (payload === undefined) {
+    console.debug(`[debug:${scope}] ${message}`)
+    return
+  }
+  console.debug(`[debug:${scope}] ${message}`, payload)
+}
+
+function writeErrorToMainConsole(scope: string, message: string, payload: unknown): void {
+  if (!mainConsoleOutputEnabled) return
+  console.error(`[debug:${scope}] ${message}`, payload)
+}
+
+function shouldEnableMainConsoleOutput(): boolean {
+  return process.env['ELECTRON_RENDERER_URL'] !== undefined || process.env['NODE_ENV'] === 'development'
 }

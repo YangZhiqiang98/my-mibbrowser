@@ -9,6 +9,7 @@ import type {
   SnmpToolWindowToast,
   ToolWindowMibNode
 } from '../../../shared/toolWindowTypes'
+import type { DebugLogEntry } from '../../../shared/debugLogTypes'
 
 declare global {
   interface Window {
@@ -41,6 +42,7 @@ declare global {
       debug: {
         getEnabled: () => Promise<boolean>
         setEnabled: (enabled: boolean) => Promise<boolean>
+        onEntry: (callback: (entry: DebugLogEntry) => void) => () => void
       }
       export: {
         csv: (data: Array<Record<string, unknown>>) => Promise<boolean>

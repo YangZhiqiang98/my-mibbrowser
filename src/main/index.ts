@@ -3,6 +3,7 @@ import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { registerIpcHandlers, loadMibCache } from './ipc/handlers'
 import { registerToolWindowHandlers } from './toolWindows'
+import { registerDebugLogForwarder } from './debugLogForwarder'
 
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
@@ -19,6 +20,7 @@ function createWindow(): void {
   })
 
   registerToolWindowHandlers(mainWindow)
+  registerDebugLogForwarder(mainWindow)
 
   mainWindow.on('ready-to-show', () => {
     mainWindow.show()
