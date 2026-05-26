@@ -8,7 +8,7 @@ import {
   StopOutlined
 } from '@ant-design/icons'
 import { useAppStore } from '../stores/appStore'
-import { buildResultSession } from '../utils/resultColumns'
+import { buildResultSession, initResolveContext, resolveVarbind } from '../utils/resultColumns'
 import type { SnmpOperation, SnmpResult } from '../../../main/snmp/types'
 
 export function QueryPanel(): React.ReactElement {
@@ -23,6 +23,8 @@ export function QueryPanel(): React.ReactElement {
   const setIsQuerying = useAppStore((s) => s.setIsQuerying)
   const setStatusMessage = useAppStore((s) => s.setStatusMessage)
   const setConnectionStatus = useAppStore((s) => s.setConnectionStatus)
+  const initResultSession = useAppStore((s) => s.initResultSession)
+  const appendResultVarbinds = useAppStore((s) => s.appendResultVarbinds)
 
   const [setValue, setSetValue] = useState('')
   const [setType, setSetType] = useState('OCTET STRING')
@@ -49,6 +51,8 @@ export function QueryPanel(): React.ReactElement {
       return
     }
 
+    const isStreaming = queryOperation === 'WALK' || queryOperation === 'BULK_WALK'
+
     // Overwrite semantics (PR2): the moment the user clicks Send, drop any
     // prior session and flip loading so the table reflects "fetching" before
     // the response arrives.
@@ -56,6 +60,26 @@ export function QueryPanel(): React.ReactElement {
     setIsQuerying(true)
     setConnectionStatus('connecting')
     setStatusMessage(`Executing ${queryOperation}...`)
+
+    // For streaming operations, init an empty session and set up progress listener
+    let removeProgressListener: (() => void) | null = null
+    let resolveCtx: ReturnType<typeof initResolveContext> | null = null
+
+    if (isStreaming) {
+      const oids = queryOid.split(',').map(s => s.trim()).filter(s => s.length > 0)
+      initResultSession(queryOperation, oids[0] ?? '')
+      resolveCtx = initResolveContext(mibTree)
+
+      removeProgressListener = window.api.snmp.onWalkProgress((rawVarbinds) => {
+        if (!resolveCtx) return
+        const resolved = rawVarbinds.map((vb) => resolveVarbind(vb, resolveCtx!, 0))
+        appendResultVarbinds(resolved)
+        // Update status bar with live count — read current varbind count from
+        // the store snapshot by computing from the latest append.
+        const currentCount = useAppStore.getState().currentResult?.varbinds.length ?? 0
+        setStatusMessage(`${queryOperation}: ${currentCount} result(s)...`)
+      })
+    }
 
     try {
       const oids = queryOid.split(',').map(s => s.trim()).filter(s => s.length > 0)
@@ -95,21 +119,32 @@ export function QueryPanel(): React.ReactElement {
 
       if (result.success) {
         if (result.aborted) {
-          // User-cancelled path: persist whatever rows were already collected
-          // (WALK / BULK_WALK partial results) and label the status bar as
-          // aborted. Do NOT touch connectionStatus (D5) and do NOT pop a
-          // message toast (D4) — status bar text is the sole feedback.
           const session = buildResultSession(queryOperation, oids[0] ?? '', result, mibTree)
           setResult(session)
           setStatusMessage(
             `${queryOperation}: aborted at ${session.varbinds.length} row(s), ${result.responseTime}ms`
           )
+        } else if (isStreaming) {
+          // Streaming: varbinds were already appended via progress events.
+          // Finalize the session with response time and timestamp.
+          const currentSession = useAppStore.getState().currentResult
+          if (currentSession) {
+            setResult({
+              ...currentSession,
+              responseTime: result.responseTime,
+              timestamp: result.timestamp
+            })
+          }
+          setConnectionStatus('connected')
+          const finalCount = currentSession?.varbinds.length ?? 0
+          const baseMsg = `${queryOperation}: ${finalCount} result(s), ${result.responseTime}ms`
+          setStatusMessage(
+            finalCount === 0 ? `${baseMsg} — 本次操作结果为空` : baseMsg
+          )
         } else {
           setConnectionStatus('connected')
           const session = buildResultSession(queryOperation, oids[0] ?? '', result, mibTree)
           setResult(session)
-          // PR3 — empty-result status text suffix so the status bar surfaces
-          // "no data" without resorting to a modal / toast.
           const baseMsg = `${queryOperation}: ${session.varbinds.length} result(s), ${result.responseTime}ms`
           setStatusMessage(
             session.varbinds.length === 0 ? `${baseMsg} — 本次操作结果为空` : baseMsg
@@ -127,8 +162,12 @@ export function QueryPanel(): React.ReactElement {
       setStatusMessage(`Error: ${errMsg}`)
     } finally {
       setIsQuerying(false)
+      if (removeProgressListener) {
+        removeProgressListener()
+      }
+      window.api.snmp.removeWalkListeners()
     }
-  }, [config, queryOid, queryOperation, setValue, setType, mibTree, setResult, setIsQuerying, setConnectionStatus, setStatusMessage])
+  }, [config, queryOid, queryOperation, setValue, setType, mibTree, setResult, setIsQuerying, setConnectionStatus, setStatusMessage, initResultSession, appendResultVarbinds])
 
   const handleAbort = useCallback(async () => {
     const cancelled = await window.api.snmp.cancel()

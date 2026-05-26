@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "ResultsPanel 是 React 组件，需要遵循组件结构/条件渲染惯例"}
+{"file": ".trellis/spec/frontend/mib-tree-snmp-ops.md", "reason": "Single-write-path 约束：本次只动展示层，但需确保不引入新的 setResult 写入点"}
+{"file": ".trellis/tasks/05-25-streaming-snmp-results-to-results-panel/prd.md", "reason": "父任务 PRD：流式管道的完整设计，理解 appendResultVarbinds / onWalkProgress / isQuerying 三者关系"}

@@ -159,6 +159,47 @@ function formatVarbindValue(value: SnmpResult['varbinds'][number]['value'], type
 }
 
 /**
+ * Pre-computed resolve context for incremental varbind processing.
+ * Create once at the start of a streaming session and reuse for each batch.
+ */
+export interface ResolveContext {
+  readonly flattened: ReadonlyArray<{ oid: string; node: MibTreeNodeData }>
+}
+
+/**
+ * Create a resolve context from the current MIB tree. Call once before
+ * streaming starts; pass the result to resolveVarbind for each batch.
+ */
+export function initResolveContext(mibTree: readonly MibTreeNodeData[]): ResolveContext {
+  return { flattened: flattenMibTree(mibTree) }
+}
+
+/**
+ * Resolve a single raw SNMP varbind into a display-ready ResultVarbind.
+ * Use during streaming to incrementally build the result session.
+ */
+export function resolveVarbind(
+  vb: SnmpResult['varbinds'][number],
+  ctx: ResolveContext,
+  index: number
+): ResultVarbind {
+  const resolved = resolveOidToColumn(vb.oid, ctx.flattened)
+  const isError = vb.isError
+  return {
+    key: normalizeOid(vb.oid),
+    index,
+    oid: normalizeOid(vb.oid),
+    columnName: resolved.columnName,
+    instance: resolved.instance,
+    type: vb.type,
+    value: isError ? '' : formatVarbindValue(vb.value, vb.type),
+    rawType: vb.type,
+    isError,
+    errorTag: isError ? (vb.error || vb.type) : undefined
+  }
+}
+
+/**
  * Build a ResultSession from a raw SNMP response by mapping each varbind
  * into a flat list row with MIB name resolution and type-aware formatting.
  *
@@ -174,7 +215,7 @@ export function buildResultSession(
   response: SnmpResult,
   mibTree: readonly MibTreeNodeData[]
 ): ResultSession {
-  const flattened = flattenMibTree(mibTree)
+  const ctx = initResolveContext(mibTree)
 
   // Filter varbinds to only include those within the rootOid subtree.
   // Raw GETBULK returns "next" OIDs that may cross into unrelated tables.
@@ -187,22 +228,9 @@ export function buildResultSession(
     return oid === rootOidNorm || oid.startsWith(rootOidNorm + '.')
   })
 
-  const varbinds: ResultVarbind[] = filteredVarbinds.map((vb, i) => {
-    const resolved = resolveOidToColumn(vb.oid, flattened)
-    const isError = vb.isError
-    return {
-      key: normalizeOid(vb.oid),
-      index: i + 1,
-      oid: normalizeOid(vb.oid),
-      columnName: resolved.columnName,
-      instance: resolved.instance,
-      type: vb.type,
-      value: isError ? '' : formatVarbindValue(vb.value, vb.type),
-      rawType: vb.type,
-      isError,
-      errorTag: isError ? (vb.error || vb.type) : undefined
-    }
-  })
+  const varbinds: ResultVarbind[] = filteredVarbinds.map((vb, i) =>
+    resolveVarbind(vb, ctx, i + 1)
+  )
 
   return {
     operation,

@@ -4,6 +4,7 @@ import { MibParser, buildMibTree, resolveOidToName } from '../mib/parser'
 import type { MibParseResult, MibNode, MibModule } from '../mib/types'
 import { snmpGet, snmpGetNext, snmpGetBulk, snmpSet, snmpWalk, snmpBulkWalk, cancelCurrentSnmpOperation } from '../snmp/client'
 import type { SnmpConfig, SnmpResult, SnmpSetValue, SnmpVarbind } from '../snmp/types'
+import type { WalkOptions } from '../snmp/client'
 import { debugLog, isDebugModeEnabled, setDebugMode } from '../debugLogger'
 import { readFileSync, writeFileSync, existsSync, unlinkSync, readdirSync, mkdirSync } from 'fs'
 import { join, basename } from 'path'
@@ -504,9 +505,14 @@ async function handleSnmpSet(_event: IpcMainInvokeEvent, config: SnmpConfig, val
 /**
  * Execute SNMP WALK
  */
-async function handleSnmpWalk(_event: IpcMainInvokeEvent, config: SnmpConfig, oid: string): Promise<SnmpResult> {
+async function handleSnmpWalk(event: IpcMainInvokeEvent, config: SnmpConfig, oid: string): Promise<SnmpResult> {
   debugLog('ipc', 'snmp:walk invoke', { config, oid })
-  const result = await snmpWalk(config, oid)
+  const walkOptions: WalkOptions = {
+    onProgress: (batch) => {
+      event.sender.send('snmp:walk-progress', resolveVarbindNames(batch))
+    }
+  }
+  const result = await snmpWalk(config, oid, walkOptions)
   debugLog('ipc', 'snmp:walk result', { success: result.success, error: result.error, varbindCount: result.varbinds.length })
   if (result.success) {
     return {
@@ -521,10 +527,15 @@ async function handleSnmpWalk(_event: IpcMainInvokeEvent, config: SnmpConfig, oi
  * Execute SNMP BULK WALK
  */
 async function handleSnmpBulkWalk(
-  _event: IpcMainInvokeEvent, config: SnmpConfig, oid: string, maxRepetitions?: number
+  event: IpcMainInvokeEvent, config: SnmpConfig, oid: string, maxRepetitions?: number
 ): Promise<SnmpResult> {
   debugLog('ipc', 'snmp:bulk-walk invoke', { config, oid, maxRepetitions })
-  const result = await snmpBulkWalk(config, oid, maxRepetitions)
+  const walkOptions: WalkOptions = {
+    onProgress: (batch) => {
+      event.sender.send('snmp:walk-progress', resolveVarbindNames(batch))
+    }
+  }
+  const result = await snmpBulkWalk(config, oid, maxRepetitions, walkOptions)
   debugLog('ipc', 'snmp:bulk-walk result', { success: result.success, error: result.error, varbindCount: result.varbinds.length })
   if (result.success) {
     return {

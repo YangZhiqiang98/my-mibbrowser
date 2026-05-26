@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { ProfileItem, MibTreeNodeData, ResultSession } from '../types'
+import type { ProfileItem, MibTreeNodeData, ResultSession, ResultVarbind } from '../types'
 import type { SnmpConfig, SnmpOperation } from '../../../main/snmp/types'
 
 interface AppState {
@@ -42,6 +42,8 @@ interface AppState {
 
   setResult: (session: ResultSession | null) => void
   setIsQuerying: (v: boolean) => void
+  initResultSession: (operation: SnmpOperation, rootOid: string) => void
+  appendResultVarbinds: (varbinds: ResultVarbind[]) => void
 
   setProfiles: (profiles: ProfileItem[]) => void
 
@@ -124,6 +126,32 @@ export const useAppStore = create<AppState>((set) => ({
   // Results actions — PR2 unified write path
   setResult: (session) => set({ currentResult: session }),
   setIsQuerying: (v) => set({ isQuerying: v }),
+
+  // Streaming actions for incremental WALK/BULK_WALK results
+  initResultSession: (operation, rootOid) =>
+    set({
+      currentResult: {
+        operation,
+        rootOid,
+        timestamp: Date.now(),
+        responseTime: 0,
+        varbinds: []
+      }
+    }),
+  appendResultVarbinds: (newVarbinds) =>
+    set((state) => {
+      const session = state.currentResult
+      if (!session) return state
+      const existingCount = session.varbinds.length
+      const varbinds = [
+        ...session.varbinds,
+        ...newVarbinds.map((vb, i) => ({
+          ...vb,
+          index: existingCount + i + 1
+        }))
+      ]
+      return { currentResult: { ...session, varbinds } }
+    }),
 
   // Profile actions
   setProfiles: (profiles) => set({ profiles }),

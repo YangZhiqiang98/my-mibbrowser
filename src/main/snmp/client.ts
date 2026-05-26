@@ -647,13 +647,22 @@ function oidInSubtree(oid: string, rootOid: string): boolean {
 }
 
 /**
+ * Options for walk-shaped operations that support streaming progress.
+ */
+export interface WalkOptions {
+  /** Called after each batch of varbinds is collected. */
+  onProgress?: (newVarbinds: SnmpVarbind[]) => void
+}
+
+/**
  * Execute an SNMP WALK (GETNEXT loop) operation
  */
-export function snmpWalk(config: SnmpConfig, rootOid: string): Promise<SnmpResult> {
+export function snmpWalk(config: SnmpConfig, rootOid: string, options?: WalkOptions): Promise<SnmpResult> {
   return new Promise((resolve) => {
     const startTime = Date.now()
     const results: SnmpVarbind[] = []
     let settled = false
+    const onProgress = options?.onProgress
     logSnmpStart('WALK', config, { rootOid })
 
     const finish = (session: SnmpSession | null, result: SnmpResult): void => {
@@ -689,6 +698,9 @@ export function snmpWalk(config: SnmpConfig, rootOid: string): Promise<SnmpResul
     abortRequested = false
 
     const callback = (error: unknown, varbinds: unknown[]): void => {
+      // Track varbinds pushed in this callback for progress reporting
+      const pushedBefore = results.length
+
       // Abort takes priority over both the error and the success branches:
       // close() triggers this callback with "Socket forcibly closed", but we
       // want to resolve as aborted with whatever rows we already collected.
@@ -745,6 +757,11 @@ export function snmpWalk(config: SnmpConfig, rootOid: string): Promise<SnmpResul
         results.push(formatVarbindValue(vb))
       }
 
+      // Notify progress listeners with the varbinds pushed in this callback.
+      if (onProgress && results.length > pushedBefore) {
+        onProgress(results.slice(pushedBefore))
+      }
+
       // Continue walking
       if (varbinds.length > 0) {
         // net-snmp returns OIDs with a leading dot; strip it before feeding
@@ -794,13 +811,14 @@ export function snmpWalk(config: SnmpConfig, rootOid: string): Promise<SnmpResul
  * Execute an SNMP Bulk Walk (GETBULK loop) operation
  */
 export function snmpBulkWalk(
-  config: SnmpConfig, rootOid: string, maxRepetitions?: number
+  config: SnmpConfig, rootOid: string, maxRepetitions?: number, options?: WalkOptions
 ): Promise<SnmpResult> {
   return new Promise((resolve) => {
     const startTime = Date.now()
     const results: SnmpVarbind[] = []
     let settled = false
     const effectiveMaxRepetitions = maxRepetitions ?? config.bulkMaxRepetitions
+    const onProgress = options?.onProgress
     logSnmpStart('BULK_WALK', config, {
       rootOid,
       maxRepetitions: effectiveMaxRepetitions
@@ -839,6 +857,8 @@ export function snmpBulkWalk(
     abortRequested = false
 
     const callback = (error: unknown, varbinds: unknown[]): void => {
+      const pushedBefore = results.length
+
       if (abortRequested) {
         finish(session, {
           success: true,
@@ -883,6 +903,10 @@ export function snmpBulkWalk(
 
         results.push(formatVarbindValue(vb))
         lastOid = vb.oid
+      }
+
+      if (onProgress && results.length > pushedBefore) {
+        onProgress(results.slice(pushedBefore))
       }
 
       if (hitEndOfMib || flat.length === 0 || !lastOid) {

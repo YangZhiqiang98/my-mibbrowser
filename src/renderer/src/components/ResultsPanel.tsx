@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Button, Space, Tooltip, message, Empty, Spin } from 'antd'
+import { Button, Space, Tooltip, message, Empty } from 'antd'
 import {
   DownloadOutlined,
   FileExcelOutlined,
@@ -32,6 +32,8 @@ export function ResultsPanel(): React.ReactElement {
   const [scrollTop, setScrollTop] = useState(0)
   const [viewportHeight, setViewportHeight] = useState(0)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const isAutoScrollRef = useRef(true)
+  const prevRowCountRef = useRef(0)
 
   // Reset selection and hex state whenever a new session arrives.
   useEffect(() => {
@@ -39,13 +41,16 @@ export function ResultsPanel(): React.ReactElement {
     setShowHex({})
   }, [session])
 
-  // Track scroll container dimensions and scroll position.
+  // Track scroll container dimensions, scroll position, and auto-scroll state.
   useEffect(() => {
     const el = scrollContainerRef.current
     if (!el) return
 
     const handleScroll = (): void => {
       setScrollTop(el.scrollTop)
+      // Detect if user is near bottom (within 3 rows)
+      const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
+      isAutoScrollRef.current = distanceFromBottom < LINE_HEIGHT * 3
     }
 
     const handleResize = (): void => {
@@ -66,6 +71,25 @@ export function ResultsPanel(): React.ReactElement {
 
   const varbinds = session?.varbinds ?? []
   const rowCount = varbinds.length
+
+  // Auto-scroll to bottom when new rows arrive during streaming.
+  useEffect(() => {
+    if (!isQuerying || rowCount === 0 || rowCount === prevRowCountRef.current) return
+    prevRowCountRef.current = rowCount
+
+    if (isAutoScrollRef.current) {
+      const el = scrollContainerRef.current
+      if (el) {
+        el.scrollTop = el.scrollHeight
+      }
+    }
+  }, [isQuerying, rowCount])
+
+  // Reset row counter when session changes
+  useEffect(() => {
+    prevRowCountRef.current = 0
+    isAutoScrollRef.current = true
+  }, [session?.timestamp])
 
   // Virtual windowing: compute which rows are visible.
   // Rows start after the header, so we offset the scroll position by HEADER_HEIGHT.
@@ -233,12 +257,6 @@ export function ResultsPanel(): React.ReactElement {
       </div>
 
       <div className="results-log" ref={scrollContainerRef}>
-        {isQuerying && (
-          <div className="results-log-loading">
-            <Spin size="small" />
-          </div>
-        )}
-
         {!isQuerying && rowCount === 0 && !session?.error && (
           <div className="results-log-empty">
             {session ? (
@@ -255,7 +273,7 @@ export function ResultsPanel(): React.ReactElement {
           </div>
         )}
 
-        {!isQuerying && (rowCount > 0 || session?.error) && (
+        {(isQuerying || rowCount > 0 || session?.error) && (
           <>
             <div className="results-log-header" onClick={selectAll} title="Click to select all rows">
               <span className="log-header-text">***** SNMP QUERY STARTED *****</span>
@@ -303,13 +321,13 @@ export function ResultsPanel(): React.ReactElement {
               </div>
             )}
 
-            {!isQuerying && (rowCount > 0 || session?.error) && (
-              <div className="results-log-footer">
-                <span className="log-footer-text">
-                  ***** SNMP QUERY COMPLETED ({rowCount} results, {session?.responseTime ?? 0}ms) *****
-                </span>
-              </div>
-            )}
+            <div className={`results-log-footer${isQuerying ? ' results-log-footer--running' : ''}`}>
+              <span className="log-footer-text">
+                {isQuerying
+                  ? `***** SNMP QUERY RUNNING... (${rowCount} results so far) *****`
+                  : `***** SNMP QUERY COMPLETED (${rowCount} results, ${session?.responseTime ?? 0}ms) *****`}
+              </span>
+            </div>
           </>
         )}
       </div>

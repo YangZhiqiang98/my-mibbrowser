@@ -20,7 +20,7 @@ This directory contains guidelines for frontend development. Fill in each file w
 | [State Management](./state-management.md) | Local state, global state, server state | To fill |
 | [Quality Guidelines](./quality-guidelines.md) | Code standards, forbidden patterns | To fill |
 | [Type Safety](./type-safety.md) | Type patterns, validation | To fill |
-| [MIB Tree SNMP Ops](./mib-tree-snmp-ops.md) | GETBULK / walk semantics; single-write result path; device-truth SET authority; column resolution rules | Filled |
+| [MIB Tree SNMP Ops](./mib-tree-snmp-ops.md) | GETBULK / walk semantics; single-write result path; streaming display gating; device-truth SET authority; column resolution rules | Filled |
 
 ---
 

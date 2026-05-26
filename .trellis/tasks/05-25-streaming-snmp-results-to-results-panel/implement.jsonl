@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/snmp-guidelines.md", "reason": "OID comparison, leading-dot normalization, walk termination rules — must follow when modifying snmpWalk/snmpBulkWalk onProgress callback"}
+{"file": ".trellis/spec/frontend/mib-tree-snmp-ops.md", "reason": "GETBULK/walk semantics, single-write result path, column resolution rules — governs how ResultSession is built and how streaming varbinds should be resolved"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "Component patterns, props, composition — relevant for ResultsPanel auto-scroll and QueryPanel streaming listener setup"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Cross-layer data flow guide — this task spans IPC boundary (main→preload→renderer), need to verify serialization, error propagation, and cleanup"}

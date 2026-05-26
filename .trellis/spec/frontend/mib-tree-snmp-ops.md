@@ -120,6 +120,60 @@ try {
 
 ---
 
+## Constraint: Streaming Display Must Not Be Gated Behind `!isQuerying`
+
+WALK / BULK_WALK results stream into `currentResult.varbinds` incrementally via `appStore.appendResultVarbinds` (driven by `snmp:walk-progress` IPC events). The presentation layer must render those rows **as they arrive**, not after the final `setIsQuerying(false)` lands. Any conditional that hides the row container while `isQuerying === true` defeats the entire streaming pipeline — the data is in the store, but the user only sees it appear in one batch at the end.
+
+### Required Conditions
+
+For any panel that renders streaming results (`ResultsPanel.tsx`, future tool-window result panes, etc.):
+
+```tsx
+// Header + rows + footer share the same outer guard.
+{(isQuerying || rowCount > 0 || session?.error) && (
+  <>
+    <div className="results-log-header">...</div>
+    {session?.error && <div className="results-log-error-banner">...</div>}
+    {rowCount > 0 && <div /* virtual scroll rows */>...</div>}
+    <div className="results-log-footer">
+      {isQuerying
+        ? `***** SNMP QUERY RUNNING... (${rowCount} results so far) *****`
+        : `***** SNMP QUERY COMPLETED (${rowCount} results, ${session?.responseTime ?? 0}ms) *****`}
+    </div>
+  </>
+)}
+```
+
+Empty state stays gated by `!isQuerying && rowCount === 0 && !session?.error` — querying with zero rows so far shows the RUNNING footer, not the Empty placeholder.
+
+### Why
+
+- The streaming pipeline (main `onProgress` → IPC `snmp:walk-progress` → preload `onWalkProgress` → renderer `appendResultVarbinds`) does the right thing on every layer. The only place a regression can hide is the JSX conditional.
+- `isQuerying` is a busy flag consumed by many places (StatusBar, button loading state, abort-button visibility). Re-purposing it as "hide the results panel" tightly couples display readiness to operation lifecycle and silently turns streaming back into one-shot rendering.
+- Auto-scroll (`isAutoScrollRef`) depends on the row container existing in the DOM during streaming so `scrollHeight` grows. If the container is unmounted, auto-scroll is a no-op and the user can't even tell rows are arriving.
+
+### How to Apply
+
+- Express progress through **inline footer text** (`RUNNING... (N results so far)` ↔ `COMPLETED (N results, Tms)`), not through a separate Spin block that replaces the row container.
+- Do **not** wrap the header / row container / footer in `!isQuerying && ...`. Use `(isQuerying || rowCount > 0 || session?.error)` so the block is present from the moment `setIsQuerying(true)` fires.
+- A standalone Spin / skeleton overlay is acceptable **only if it sits next to the row container** (e.g. corner badge), never gating it.
+- GET / GETBULK / SET will briefly flash the RUNNING footer between `setIsQuerying(true)` and the terminal `setResult(session)` — this is acceptable; their full cycle is typically under 100 ms.
+- The same rule applies to any future panel that consumes `appendResultVarbinds` (tool-window result panes, dashboard-style multi-session views, etc.).
+
+### Common Mistake
+
+```tsx
+// ❌ WRONG — rows are in the store but hidden until isQuerying flips false.
+{isQuerying && <Spin />}
+{!isQuerying && (rowCount > 0 || session?.error) && (
+  <>...header + rows + footer...</>
+)}
+```
+
+Symptom: status bar count ticks up live (`WALK: 47 result(s)...`), but the results panel stays on a centered spinner; all rows appear in one paint when the operation completes. The streaming pipeline looks broken even though only the display layer is at fault.
+
+---
+
 ## Constraint: SNMP SET Authority Is the Device Response, Not the MIB `access` Field
 
 The MIB `access` attribute (`read-only`, `read-write`, `read-create`, `not-accessible`, `accessible-for-notify`) declares the **MIB author's stated semantics**, not the runtime writability of any particular device. A node marked `read-write` can be refused by a device that protects it through a separate mechanism; a node marked `read-only` can be writable on a vendor that ships extensions. The same gap applies to reads on `not-accessible` rows.

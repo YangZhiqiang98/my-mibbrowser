@@ -1,6 +1,6 @@
 import type { MibParseResult, MibNode } from '../../../main/mib/types'
 import type { MibNamedValue } from '../../../main/mib/types'
-import type { SnmpConfig, SnmpResult, SnmpSetValue, SnmpOperation } from '../../../main/snmp/types'
+import type { SnmpConfig, SnmpResult, SnmpSetValue, SnmpOperation, SnmpVarbind } from '../../../main/snmp/types'
 import type {
   SnmpToolWindowContext,
   SnmpToolWindowOpenRequest,
@@ -30,6 +30,8 @@ declare global {
         walk: (config: SnmpConfig, oid: string) => Promise<SnmpResult>
         bulkWalk: (config: SnmpConfig, oid: string, maxReps?: number) => Promise<SnmpResult>
         cancel: () => Promise<boolean>
+        onWalkProgress: (callback: (varbinds: SnmpVarbind[]) => void) => () => void
+        removeWalkListeners: () => void
       }
       profile: {
         save: (profile: { id: string; name: string; config: SnmpConfig }) => Promise<void>

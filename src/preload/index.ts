@@ -40,7 +40,15 @@ const api = {
       ipcRenderer.invoke('snmp:walk', config, oid),
     bulkWalk: (config: SnmpConfig, oid: string, maxReps?: number): Promise<SnmpResult> =>
       ipcRenderer.invoke('snmp:bulk-walk', config, oid, maxReps),
-    cancel: (): Promise<boolean> => ipcRenderer.invoke('snmp:cancel')
+    cancel: (): Promise<boolean> => ipcRenderer.invoke('snmp:cancel'),
+    onWalkProgress: (callback: (varbinds: SnmpResult['varbinds']) => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, varbinds: SnmpResult['varbinds']) => callback(varbinds)
+      ipcRenderer.on('snmp:walk-progress', listener)
+      return () => ipcRenderer.removeListener('snmp:walk-progress', listener)
+    },
+    removeWalkListeners: (): void => {
+      ipcRenderer.removeAllListeners('snmp:walk-progress')
+    }
   },
 
   // Connection profiles
