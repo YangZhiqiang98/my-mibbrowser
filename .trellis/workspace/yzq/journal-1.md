@@ -969,3 +969,36 @@ Replaced pivot table with flat varbind list (ResultVarbind[]), then replaced ant
 ### Next Steps
 
 - None - task complete
+
+
+## Session 25: Stream WALK varbinds end-to-end and unblock display gate
+
+**Date**: 2026-05-26
+**Task**: Stream WALK varbinds end-to-end and unblock display gate
+**Branch**: `main`
+
+### Summary
+
+Delivered the WALK / BULK_WALK streaming pipeline (main onProgress → IPC walk-progress → preload onWalkProgress → store appendResultVarbinds) and fixed the ResultsPanel display gate that hid the row container behind !isQuerying. Inline footer now carries RUNNING / COMPLETED progress text instead of a Spin block overriding rows. Codified a new constraint in frontend/mib-tree-snmp-ops.md so future result panels do not reintroduce the gating bug.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `459f6f9` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

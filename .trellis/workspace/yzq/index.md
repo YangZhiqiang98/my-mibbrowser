@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 24
-- **Last Active**: 2026-05-25
+- **Total Sessions**: 25
+- **Last Active**: 2026-05-26
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~971 | Active |
+| `journal-1.md` | ~1004 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 25 | 2026-05-26 | Stream WALK varbinds end-to-end and unblock display gate | `459f6f9` | `main` |
 | 24 | 2026-05-25 | Refactor Results Panel to log-style display | `e0a4e32`, `29e4980`, `db17226`, `2a1eebd` | `main` |
 | 23 | 2026-05-25 | Fix table viewer formatter parity with Results Panel | `8bacdc0` | `main` |
 | 22 | 2026-05-25 | Fix Table Viewer empty result on entry nodes (scalar-kind columns) | `ea097a4` | `main` |
