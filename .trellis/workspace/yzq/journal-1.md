@@ -1101,3 +1101,36 @@ Implemented RowStatus-backed Table Viewer Add Row and Delete Row workflows with 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 29: Add Trap and Inform console
+
+**Date**: 2026-05-26
+**Task**: Add Trap and Inform console
+**Branch**: `main`
+
+### Summary
+
+Implemented main-process Trap/Inform receiver, renderer console, IPC/preload contracts, README update, and SNMP receiver spec. Verified typecheck, lint, tests, and build.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `9220f9f` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
