@@ -1002,3 +1002,36 @@ Delivered the WALK / BULK_WALK streaming pipeline (main onProgress → IPC walk-
 ### Next Steps
 
 - None - task complete
+
+
+## Session 26: Stream MIB-tree walk results
+
+**Date**: 2026-05-26
+**Task**: Stream MIB-tree walk results
+**Branch**: `main`
+
+### Summary
+
+Fixed MIB tree right-click WALK and BULK_WALK to consume walk progress events and stream rows into the Results Panel; documented the main-window streaming trigger contract.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `df8295d` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
