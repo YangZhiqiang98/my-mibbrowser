@@ -1134,3 +1134,36 @@ Implemented main-process Trap/Inform receiver, renderer console, IPC/preload con
 ### Next Steps
 
 - None - task complete
+
+
+## Session 30: Code review cleanup
+
+**Date**: 2026-05-27
+**Task**: Code review cleanup
+**Branch**: `main`
+
+### Summary
+
+Reviewed and cleaned codebase: removed dead ResizableHeaderCell, fixed QueryPanel validation/stream abort handling, aligned result fallback, cleaned dependency declarations, updated README, and verified typecheck/lint/test/build.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `d2dce64` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

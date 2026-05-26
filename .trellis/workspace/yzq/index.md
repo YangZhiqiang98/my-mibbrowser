@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 29
-- **Last Active**: 2026-05-26
+- **Total Sessions**: 30
+- **Last Active**: 2026-05-27
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1136 | Active |
+| `journal-1.md` | ~1169 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 30 | 2026-05-27 | Code review cleanup | `d2dce64` | `main` |
 | 29 | 2026-05-26 | Add Trap and Inform console | `9220f9f` | `main` |
 | 28 | 2026-05-26 | Add Table Viewer row lifecycle operations | `aa76323` | `main` |
 | 27 | 2026-05-26 | Simplify README | `f591ba0` | `main` |
