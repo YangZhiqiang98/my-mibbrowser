@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 27
+- **Total Sessions**: 28
 - **Last Active**: 2026-05-26
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1070 | Active |
+| `journal-1.md` | ~1103 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 28 | 2026-05-26 | Add Table Viewer row lifecycle operations | `aa76323` | `main` |
 | 27 | 2026-05-26 | Simplify README | `f591ba0` | `main` |
 | 26 | 2026-05-26 | Stream MIB-tree walk results | `df8295d` | `main` |
 | 25 | 2026-05-26 | Stream WALK varbinds end-to-end and unblock display gate | `459f6f9` | `main` |

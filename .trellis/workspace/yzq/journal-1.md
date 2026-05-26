@@ -1068,3 +1068,36 @@ Simplified README back to a concise project overview while keeping doc/png scree
 ### Next Steps
 
 - None - task complete
+
+
+## Session 28: Add Table Viewer row lifecycle operations
+
+**Date**: 2026-05-26
+**Task**: Add Table Viewer row lifecycle operations
+**Branch**: `main`
+
+### Summary
+
+Implemented RowStatus-backed Table Viewer Add Row and Delete Row workflows with utility tests, README update, and frontend spec documentation.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `aa76323` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
