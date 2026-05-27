@@ -255,6 +255,97 @@ removeProgressListener()
 
 ---
 
+## Constraint: Streamed WALK Final Responses Are Opt-In Metadata-Only
+
+Main-window WALK / BULK_WALK callers that already render progress events may request a metadata-only final IPC response. This avoids sending the same large varbind list twice: once through `snmp:walk-progress` batches and again through the final `ipcRenderer.invoke(...)` result.
+
+### 1. Scope / Trigger
+
+- Trigger: Query Panel or MIB tree right-click WALK / BULK_WALK displaying rows in the main `ResultsPanel`.
+- Backend owner: `src/main/ipc/handlers.ts` finalizes the `SnmpResult`.
+- Preload/shared contract: `SnmpWalkRequestOptions` in `src/main/snmp/types.ts`.
+- Renderer owner: `QueryPanel.tsx` and `MibTreePanel.tsx`.
+
+### 2. Signatures
+
+```typescript
+interface SnmpWalkRequestOptions {
+  omitFinalVarbinds?: boolean
+}
+
+interface SnmpResult {
+  success: boolean
+  varbinds: SnmpVarbind[]
+  responseTime: number
+  timestamp: number
+  aborted?: boolean
+  streamed?: boolean
+}
+
+window.api.snmp.walk(config, oid, { omitFinalVarbinds: true })
+window.api.snmp.bulkWalk(config, oid, maxRepetitions, { omitFinalVarbinds: true })
+```
+
+### 3. Contracts
+
+- `omitFinalVarbinds` defaults to false/undefined. Callers that do not pass it receive the complete final `varbinds` array.
+- When `omitFinalVarbinds === true` and the operation succeeds, the final response sets `streamed: true` and returns `varbinds: []`.
+- Progress batches are still emitted through `snmp:walk-progress` and must be consumed before finalization.
+- The renderer must flush any buffered progress batches before reading `useAppStore.getState().currentResult`.
+- The final response is still authoritative for `responseTime`, `timestamp`, `success`, `error`, and `aborted`.
+
+### 4. Validation & Error Matrix
+
+| Condition | Required behavior |
+|---|---|
+| Main-window streaming caller subscribed to progress events | Pass `{ omitFinalVarbinds: true }`; render rows from progress batches; finalize metadata from final result |
+| Table Viewer / instance discovery / any caller needing final rows | Do not pass `omitFinalVarbinds`; consume `result.varbinds` normally |
+| Operation fails (`success: false`) | Return the normal error result; do not mark it as streamed |
+| Operation aborts after partial progress | Keep partial rows from the streamed session and use final `responseTime` for the aborted status |
+| No progress rows arrive | Final streamed response has `varbinds: []`; UI shows the existing empty-result messaging |
+
+### 5. Good/Base/Bad Cases
+
+- Good: Query Panel BULK_WALK subscribes to progress, passes `omitFinalVarbinds`, flushes the batcher, and finalizes the current streamed session with response metadata.
+- Base: Table Viewer bulk-walks an entry without the option and receives the full final varbind list for table construction.
+- Bad: A caller passes `omitFinalVarbinds` without subscribing to progress events; the final `varbinds` array is empty and rows are lost.
+
+### 6. Tests Required
+
+- Typecheck must cover the preload and renderer signatures.
+- Unit tests should cover progress batching flush/dispose behavior.
+- Manual smoke should verify Query Panel and MIB tree WALK / BULK_WALK still show live rows and final counts.
+- Manual smoke should verify Table Viewer still loads rows because it does not opt into metadata-only responses.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```typescript
+const result = await window.api.snmp.walk(config, oid, { omitFinalVarbinds: true })
+const session = buildResultSession('WALK', oid, result, mibTree)
+setResult(session) // result.varbinds is intentionally empty
+```
+
+#### Correct
+
+```typescript
+initResultSession('WALK', oid)
+const batcher = createStreamingResultBatcher(appendResultVarbinds)
+const cleanup = window.api.snmp.onWalkProgress((batch) => {
+  batcher.push(batch.map((vb) => resolveVarbind(vb, resolveCtx, 0)))
+})
+const result = await window.api.snmp.walk(config, oid, { omitFinalVarbinds: true })
+batcher.flush()
+const currentSession = useAppStore.getState().currentResult
+if (currentSession) {
+  setResult({ ...currentSession, responseTime: result.responseTime, timestamp: result.timestamp })
+}
+cleanup()
+```
+
+---
+
 ## Constraint: SNMP SET Authority Is the Device Response, Not the MIB `access` Field
 
 The MIB `access` attribute (`read-only`, `read-write`, `read-create`, `not-accessible`, `accessible-for-notify`) declares the **MIB author's stated semantics**, not the runtime writability of any particular device. A node marked `read-write` can be refused by a device that protects it through a separate mechanism; a node marked `read-only` can be writable on a vendor that ships extensions. The same gap applies to reads on `not-accessible` rows.
