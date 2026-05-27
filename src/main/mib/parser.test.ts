@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { buildMibTree, MibParser } from './parser'
+import type { MibNode } from './types'
+import {
+  buildMibTree,
+  createOidNameResolver,
+  MibParser,
+  resolveOidToName,
+  resolveOidToNameWithResolver
+} from './parser'
 
 const baseMib = `
 BASE-MIB DEFINITIONS ::= BEGIN
@@ -74,6 +81,26 @@ childValue OBJECT-TYPE
 END
 `
 
+function makeNode(name: string, oidString: string): MibNode {
+  return {
+    id: `TEST::${name}`,
+    name,
+    oid: oidString.split('.').map(Number),
+    oidString,
+    syntax: 'OBJECT-IDENTITY',
+    access: 'not-accessible',
+    status: 'current',
+    description: '',
+    kind: 'group',
+    module: 'TEST',
+    parentId: null,
+    children: [],
+    isTable: false,
+    indexColumns: [],
+    oidDef: ''
+  }
+}
+
 describe('MibParser dependency-aware parsing', () => {
   it('parses local dependencies before importers and preserves table metadata', () => {
     const parser = new MibParser()
@@ -141,5 +168,38 @@ describe('MibParser dependency-aware parsing', () => {
       { name: 'enabled', value: 0 },
       { name: 'alarmed', value: 1 }
     ])
+  })
+})
+
+describe('OID name resolver', () => {
+  it('matches exact OIDs and longest child prefixes with leading-dot normalization', () => {
+    const nodes = [
+      makeNode('ifTable', '1.3.6.1.2.1.2.2'),
+      makeNode('ifEntry', '1.3.6.1.2.1.2.2.1'),
+      makeNode('ifDescr', '1.3.6.1.2.1.2.2.1.2')
+    ]
+    const resolver = createOidNameResolver(nodes)
+
+    expect(resolveOidToNameWithResolver('1.3.6.1.2.1.2.2.1', resolver)).toBe('ifEntry')
+    expect(resolveOidToNameWithResolver('.1.3.6.1.2.1.2.2.1.2.7', resolver)).toBe('ifDescr.7')
+  })
+
+  it('does not match lexical prefixes across OID segment boundaries', () => {
+    const nodes = [
+      makeNode('ifDescr', '1.3.6.1.2.1.2.2.1.2')
+    ]
+    const resolver = createOidNameResolver(nodes)
+
+    expect(resolveOidToNameWithResolver('1.3.6.1.2.1.2.2.1.20.7', resolver)).toBe(
+      '1.3.6.1.2.1.2.2.1.20.7'
+    )
+  })
+
+  it('keeps the compatibility wrapper behavior equivalent to the resolver path', () => {
+    const nodes = [
+      makeNode('sysDescr', '1.3.6.1.2.1.1.1')
+    ]
+
+    expect(resolveOidToName('.1.3.6.1.2.1.1.1.0', nodes)).toBe('sysDescr.0')
   })
 })

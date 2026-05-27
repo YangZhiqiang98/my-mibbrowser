@@ -95,6 +95,20 @@ export interface SnmpResult {
    * `if (result.aborted)` and treat `undefined` as "not aborted".
    */
   aborted?: boolean
+  /**
+   * True when a WALK / BULK_WALK caller opted into progress-event rendering
+   * and the final IPC response intentionally omitted the full varbind payload.
+   */
+  streamed?: boolean
+}
+
+export interface SnmpWalkRequestOptions {
+  /**
+   * When true, the main process still emits progress batches but returns only
+   * final metadata from the invoke response. Use only from renderers that
+   * subscribed to `snmp:walk-progress` before starting the request.
+   */
+  omitFinalVarbinds?: boolean
 }
 
 /**

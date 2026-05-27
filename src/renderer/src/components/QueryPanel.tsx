@@ -9,6 +9,7 @@ import {
 } from '@ant-design/icons'
 import { useAppStore } from '../stores/appStore'
 import { buildResultSession, initResolveContext, resolveVarbind } from '../utils/resultColumns'
+import { createStreamingResultBatcher } from '../utils/streamingResultBatcher'
 import type { SnmpOperation, SnmpResult } from '../../../main/snmp/types'
 
 export function QueryPanel(): React.ReactElement {
@@ -71,19 +72,20 @@ export function QueryPanel(): React.ReactElement {
     // For streaming operations, init an empty session and set up progress listener
     let removeProgressListener: (() => void) | null = null
     let resolveCtx: ReturnType<typeof initResolveContext> | null = null
+    let streamBatcher: ReturnType<typeof createStreamingResultBatcher> | null = null
+    let streamedRowCount = 0
 
     if (isStreaming) {
       initResultSession(queryOperation, oids[0] ?? '')
       resolveCtx = initResolveContext(mibTree)
+      streamBatcher = createStreamingResultBatcher(appendResultVarbinds)
 
       removeProgressListener = window.api.snmp.onWalkProgress((rawVarbinds) => {
         if (!resolveCtx) return
         const resolved = rawVarbinds.map((vb) => resolveVarbind(vb, resolveCtx!, 0))
-        appendResultVarbinds(resolved)
-        // Update status bar with live count — read current varbind count from
-        // the store snapshot by computing from the latest append.
-        const currentCount = useAppStore.getState().currentResult?.varbinds.length ?? 0
-        setStatusMessage(`${queryOperation}: ${currentCount} result(s)...`)
+        streamedRowCount += resolved.length
+        streamBatcher?.push(resolved)
+        setStatusMessage(`${queryOperation}: ${streamedRowCount} result(s)...`)
       })
     }
 
@@ -105,10 +107,12 @@ export function QueryPanel(): React.ReactElement {
           })))
           break
         case 'WALK':
-          result = await window.api.snmp.walk(config, oids[0])
+          result = await window.api.snmp.walk(config, oids[0], { omitFinalVarbinds: true })
           break
         case 'BULK_WALK':
-          result = await window.api.snmp.bulkWalk(config, oids[0], config.bulkMaxRepetitions)
+          result = await window.api.snmp.bulkWalk(config, oids[0], config.bulkMaxRepetitions, {
+            omitFinalVarbinds: true
+          })
           break
         default:
           message.error('Unknown operation')
@@ -117,6 +121,7 @@ export function QueryPanel(): React.ReactElement {
       }
 
       if (result.success) {
+        streamBatcher?.flush()
         if (result.aborted) {
           const streamedSession = isStreaming
             ? useAppStore.getState().currentResult
@@ -163,6 +168,8 @@ export function QueryPanel(): React.ReactElement {
       message.error(`Request failed: ${errMsg}`)
       setStatusMessage(`Error: ${errMsg}`)
     } finally {
+      streamBatcher?.flush()
+      streamBatcher?.dispose()
       setIsQuerying(false)
       if (removeProgressListener) {
         removeProgressListener()

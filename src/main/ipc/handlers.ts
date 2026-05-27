@@ -1,9 +1,15 @@
 import { ipcMain, dialog, BrowserWindow } from 'electron'
 import type { IpcMainInvokeEvent } from 'electron'
-import { MibParser, buildMibTree, resolveOidToName } from '../mib/parser'
+import {
+  MibParser,
+  buildMibTree,
+  createOidNameResolver,
+  resolveOidToNameWithResolver
+} from '../mib/parser'
+import type { MibOidNameResolver } from '../mib/parser'
 import type { MibParseResult, MibNode, MibModule } from '../mib/types'
 import { snmpGet, snmpGetNext, snmpGetBulk, snmpSet, snmpWalk, snmpBulkWalk, cancelCurrentSnmpOperation } from '../snmp/client'
-import type { SnmpConfig, SnmpResult, SnmpSetValue, SnmpVarbind } from '../snmp/types'
+import type { SnmpConfig, SnmpResult, SnmpSetValue, SnmpVarbind, SnmpWalkRequestOptions } from '../snmp/types'
 import type { WalkOptions } from '../snmp/client'
 import { getTrapReceiverStatus, startTrapReceiver, stopTrapReceiver } from '../snmp/trapReceiver'
 import type { TrapNotificationEvent, TrapReceiverConfig, TrapReceiverStatus } from '../../shared/trapTypes'
@@ -17,6 +23,7 @@ const mibParser = new MibParser()
 
 // In-memory MIB tree state - persists across loads for incremental building
 let mibNodes: MibNode[] = []
+let mibOidNameResolver: MibOidNameResolver = createOidNameResolver(mibNodes)
 let accumulatedModules: MibModule[] = []
 
 // Track which directory each module came from, for dedup on reload.
@@ -45,6 +52,11 @@ interface CacheDirConfig {
 interface AppSettings {
   lastHost?: string
   lastSnmpConfig?: Partial<SnmpConfig>
+}
+
+function setMibNodes(nodes: MibNode[]): void {
+  mibNodes = nodes
+  mibOidNameResolver = createOidNameResolver(nodes)
 }
 
 /**
@@ -180,7 +192,7 @@ export function loadMibCache(): void {
     }
 
     if (accumulatedModules.length > 0) {
-      mibNodes = buildMibTree(accumulatedModules)
+      setMibNodes(buildMibTree(accumulatedModules))
     }
   } catch {
     // Directory read error - ignore
@@ -289,7 +301,7 @@ async function handleOpenMibFiles(): Promise<MibParseResult> {
   accumulatedModules = [...accumulatedModules, ...parseResult.modules]
   directoryModuleMap.set(fileKey, [...parseResult.modules])
 
-  mibNodes = buildMibTree(accumulatedModules)
+  setMibNodes(buildMibTree(accumulatedModules))
 
   // Track loaded file modules for caching
   if (parseResult.modules.length > 0) {
@@ -336,7 +348,7 @@ async function handleOpenMibDirectory(): Promise<MibParseResult> {
   // Update directory-module mapping with the fresh module references
   directoryModuleMap.set(dirPath, [...parseResult.modules])
 
-  mibNodes = buildMibTree(accumulatedModules)
+  setMibNodes(buildMibTree(accumulatedModules))
 
   // Save per-directory cache
   saveCacheForDirectory(dirPath)
@@ -375,7 +387,7 @@ function handleLoadMibContent(
 
   directoryModuleMap.set(fileKey, [...survivingPrevious, ...parseResult.modules])
 
-  mibNodes = buildMibTree(accumulatedModules)
+  setMibNodes(buildMibTree(accumulatedModules))
 
   if (parseResult.modules.length > 0) {
     saveCacheForDirectory(fileKey)
@@ -448,8 +460,24 @@ function handleSearchMib(_event: IpcMainInvokeEvent, query: string): MibNode[] {
 function resolveVarbindNames(varbinds: SnmpVarbind[]): SnmpVarbind[] {
   return varbinds.map(vb => ({
     ...vb,
-    name: resolveOidToName(vb.oid, mibNodes)
+    name: resolveOidToNameWithResolver(vb.oid, mibOidNameResolver)
   }))
+}
+
+function finalizeWalkResult(result: SnmpResult, options?: SnmpWalkRequestOptions): SnmpResult {
+  if (!result.success) return result
+  if (!options?.omitFinalVarbinds) {
+    return {
+      ...result,
+      varbinds: resolveVarbindNames(result.varbinds)
+    }
+  }
+
+  return {
+    ...result,
+    varbinds: [],
+    streamed: true
+  }
 }
 
 /**
@@ -522,8 +550,13 @@ async function handleSnmpSet(_event: IpcMainInvokeEvent, config: SnmpConfig, val
 /**
  * Execute SNMP WALK
  */
-async function handleSnmpWalk(event: IpcMainInvokeEvent, config: SnmpConfig, oid: string): Promise<SnmpResult> {
-  debugLog('ipc', 'snmp:walk invoke', { config, oid })
+async function handleSnmpWalk(
+  event: IpcMainInvokeEvent,
+  config: SnmpConfig,
+  oid: string,
+  options?: SnmpWalkRequestOptions
+): Promise<SnmpResult> {
+  debugLog('ipc', 'snmp:walk invoke', { config, oid, options })
   const walkOptions: WalkOptions = {
     onProgress: (batch) => {
       event.sender.send('snmp:walk-progress', resolveVarbindNames(batch))
@@ -531,22 +564,20 @@ async function handleSnmpWalk(event: IpcMainInvokeEvent, config: SnmpConfig, oid
   }
   const result = await snmpWalk(config, oid, walkOptions)
   debugLog('ipc', 'snmp:walk result', { success: result.success, error: result.error, varbindCount: result.varbinds.length })
-  if (result.success) {
-    return {
-      ...result,
-      varbinds: resolveVarbindNames(result.varbinds)
-    }
-  }
-  return result
+  return finalizeWalkResult(result, options)
 }
 
 /**
  * Execute SNMP BULK WALK
  */
 async function handleSnmpBulkWalk(
-  event: IpcMainInvokeEvent, config: SnmpConfig, oid: string, maxRepetitions?: number
+  event: IpcMainInvokeEvent,
+  config: SnmpConfig,
+  oid: string,
+  maxRepetitions?: number,
+  options?: SnmpWalkRequestOptions
 ): Promise<SnmpResult> {
-  debugLog('ipc', 'snmp:bulk-walk invoke', { config, oid, maxRepetitions })
+  debugLog('ipc', 'snmp:bulk-walk invoke', { config, oid, maxRepetitions, options })
   const walkOptions: WalkOptions = {
     onProgress: (batch) => {
       event.sender.send('snmp:walk-progress', resolveVarbindNames(batch))
@@ -554,13 +585,7 @@ async function handleSnmpBulkWalk(
   }
   const result = await snmpBulkWalk(config, oid, maxRepetitions, walkOptions)
   debugLog('ipc', 'snmp:bulk-walk result', { success: result.success, error: result.error, varbindCount: result.varbinds.length })
-  if (result.success) {
-    return {
-      ...result,
-      varbinds: resolveVarbindNames(result.varbinds)
-    }
-  }
-  return result
+  return finalizeWalkResult(result, options)
 }
 
 /**
@@ -585,7 +610,7 @@ function handleTrapStart(_event: IpcMainInvokeEvent, config: TrapReceiverConfig)
     v3UserConfigured: !!config.v3.username.trim()
   })
   return startTrapReceiver(config, {
-    resolveName: (oid) => resolveOidToName(oid, mibNodes),
+    resolveName: (oid) => resolveOidToNameWithResolver(oid, mibOidNameResolver),
     onEvent: broadcastTrapEvent,
     onStatus: broadcastTrapStatus
   })

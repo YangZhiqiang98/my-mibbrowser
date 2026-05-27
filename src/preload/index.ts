@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { MibParseResult, MibNode } from '../main/mib/types'
-import type { SnmpConfig, SnmpResult, SnmpSetValue } from '../main/snmp/types'
+import type { SnmpConfig, SnmpResult, SnmpSetValue, SnmpWalkRequestOptions } from '../main/snmp/types'
 import type {
   SnmpToolWindowContext,
   SnmpToolWindowOpenRequest,
@@ -38,10 +38,15 @@ const api = {
       ipcRenderer.invoke('snmp:get-bulk', config, oids, maxReps, nonRepeaters),
     set: (config: SnmpConfig, values: SnmpSetValue[]): Promise<SnmpResult> =>
       ipcRenderer.invoke('snmp:set', config, values),
-    walk: (config: SnmpConfig, oid: string): Promise<SnmpResult> =>
-      ipcRenderer.invoke('snmp:walk', config, oid),
-    bulkWalk: (config: SnmpConfig, oid: string, maxReps?: number): Promise<SnmpResult> =>
-      ipcRenderer.invoke('snmp:bulk-walk', config, oid, maxReps),
+    walk: (config: SnmpConfig, oid: string, options?: SnmpWalkRequestOptions): Promise<SnmpResult> =>
+      ipcRenderer.invoke('snmp:walk', config, oid, options),
+    bulkWalk: (
+      config: SnmpConfig,
+      oid: string,
+      maxReps?: number,
+      options?: SnmpWalkRequestOptions
+    ): Promise<SnmpResult> =>
+      ipcRenderer.invoke('snmp:bulk-walk', config, oid, maxReps, options),
     cancel: (): Promise<boolean> => ipcRenderer.invoke('snmp:cancel'),
     onWalkProgress: (callback: (varbinds: SnmpResult['varbinds']) => void): (() => void) => {
       const listener = (_event: Electron.IpcRendererEvent, varbinds: SnmpResult['varbinds']) => callback(varbinds)

@@ -52,13 +52,25 @@ function normalizeOid(oid: string): string {
   return (oid || '').replace(/^\.+/, '').replace(/\.+$/, '')
 }
 
-function isOidWithinPrefix(oid: string, prefix: string): boolean {
-  return oid === prefix || oid.startsWith(prefix + '.')
-}
-
 function suffixAfterPrefix(oid: string, prefix: string): string {
   if (oid === prefix) return ''
   return oid.slice(prefix.length + 1)
+}
+
+function findColumnByOidPrefix(
+  oid: string,
+  columnByOid: ReadonlyMap<string, TableColumnMeta>
+): TableColumnMeta | undefined {
+  let candidate = oid
+  while (candidate.length > 0) {
+    const column = columnByOid.get(candidate)
+    if (column) return column
+
+    const lastDot = candidate.lastIndexOf('.')
+    if (lastDot < 0) break
+    candidate = candidate.slice(0, lastDot)
+  }
+  return undefined
 }
 
 function compareInstances(a: string, b: string): number {
@@ -128,11 +140,12 @@ export function buildTableSession(target: TableTarget, varbinds: SnmpVarbind[]):
     textualConvention: column.textualConvention,
     displayHint: column.displayHint
   }))
+  const columnByOid = new Map(columns.map((column) => [column.oid, column]))
   const rowsByInstance = new Map<string, TableRowData>()
 
   for (const vb of varbinds) {
     const oid = normalizeOid(vb.oid)
-    const column = columns.find((candidate) => isOidWithinPrefix(oid, candidate.oid))
+    const column = findColumnByOidPrefix(oid, columnByOid)
     if (!column) continue
 
     const instance = suffixAfterPrefix(oid, column.oid) || '0'

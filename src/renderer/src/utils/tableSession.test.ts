@@ -291,6 +291,18 @@ describe('tableSession', () => {
       expect(session.rows.map((r) => r.instance)).toEqual(['1'])
       expect(session.rows[0].cells['1.3.6.1.4.1.99999.1.1.1.2'].value).toBe('1')
     })
+
+    it('does not match lexical sibling prefixes as table columns', () => {
+      const target = resolveTableTarget(baseEntry)!
+      const varbinds: SnmpVarbind[] = [
+        // Lexically starts with baseStatus (..1.2) but is under sibling arc ..1.20.
+        { oid: '.1.3.6.1.4.1.99999.1.1.1.20.1', type: 'INTEGER', value: 20, isError: false }
+      ]
+
+      const session = buildTableSession(target, varbinds)
+
+      expect(session.rows).toEqual([])
+    })
   })
 
   describe('isTableColumnChild', () => {

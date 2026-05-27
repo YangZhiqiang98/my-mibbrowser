@@ -24,6 +24,10 @@ interface MibModuleIndexEntry extends MibSource {
   imports: Record<string, string[]>
 }
 
+export interface MibOidNameResolver {
+  readonly nameByOid: ReadonlyMap<string, string>
+}
+
 /**
  * Strip the IMPORTS section from MIB content to prevent imported symbols
  * from being parsed as actual OBJECT-TYPE/OBJECT-IDENTITY definitions.
@@ -1022,36 +1026,43 @@ function extractNamedValues(syntax: string): MibNamedValue[] {
   return values
 }
 
-/**
- * Check whether the OID string `oid` is exactly or is a child of `prefix`.
- * Compares component-by-component to avoid false prefix matches like
- * "1.3.6.1.2.1.10" being treated as a child of "1.3.6.1.2.1.1".
- *
- * Returns:
- *   'exact'  — oid === prefix (component-wise)
- *   'child'  — oid is a descendant of prefix
- *   'none'   — no match
- */
-function oidMatchesPrefix(oid: string, prefix: string): 'exact' | 'child' | 'none' {
-  if (oid === prefix) return 'exact'
-
-  // prefix must be shorter and oid must start with prefix + "."
-  if (oid.length <= prefix.length) return 'none'
-  if (oid[prefix.length] !== '.') return 'none'
-  if (!oid.startsWith(prefix)) return 'none'
-
-  // We also need to ensure the boundary is at a component boundary, not
-  // mid-number. Since prefix is a valid OID string ending with a digit,
-  // and we checked oid[prefix.length] === '.', the boundary is clean.
-  return 'child'
+function normalizeOidForLookup(oid: string): string {
+  return oid.replace(/^\.+/, '').replace(/\.+$/, '')
 }
 
-/**
- * Count the number of dot-separated components in an OID string.
- */
-function oidComponentCount(oidStr: string): number {
-  if (!oidStr) return 0
-  return oidStr.split('.').length
+export function createOidNameResolver(nodes: readonly MibNode[]): MibOidNameResolver {
+  const nameByOid = new Map<string, string>()
+
+  for (const node of nodes) {
+    const oid = normalizeOidForLookup(node.oidString)
+    if (!oid || nameByOid.has(oid)) continue
+    nameByOid.set(oid, node.name)
+  }
+
+  return { nameByOid }
+}
+
+export function resolveOidToNameWithResolver(oid: string, resolver: MibOidNameResolver): string {
+  if (!oid || resolver.nameByOid.size === 0) return oid
+
+  const normalized = normalizeOidForLookup(oid)
+  if (!normalized) return oid
+
+  let candidate = normalized
+  while (candidate.length > 0) {
+    const name = resolver.nameByOid.get(candidate)
+    if (name !== undefined) {
+      if (candidate === normalized) return name
+      const suffix = normalized.slice(candidate.length + 1)
+      return suffix ? `${name}.${suffix}` : name
+    }
+
+    const lastDot = candidate.lastIndexOf('.')
+    if (lastDot < 0) break
+    candidate = candidate.slice(0, lastDot)
+  }
+
+  return oid
 }
 
 /**
@@ -1067,36 +1078,5 @@ function oidComponentCount(oidStr: string): number {
  *      "1.3.6.1.2.1.2.2.1.1.1" -> "ifIndex.1"
  */
 export function resolveOidToName(oid: string, nodes: MibNode[]): string {
-  if (!oid || nodes.length === 0) return oid
-
-  // net-snmp returns OIDs with a leading dot (e.g. ".1.3.6.1.2.1.1.1.0")
-  // but MIB node oids are stored without it (e.g. "1.3.6.1.2.1.1").
-  const normalized = oid.startsWith('.') ? oid.slice(1) : oid
-
-  let bestMatch: MibNode | null = null
-  let bestMatchComponents = 0
-
-  for (const node of nodes) {
-    if (!node.oidString || node.oidString.length === 0) continue
-
-    const matchType = oidMatchesPrefix(normalized, node.oidString)
-    if (matchType === 'none') continue
-
-    const components = oidComponentCount(node.oidString)
-    if (components > bestMatchComponents) {
-      bestMatch = node
-      bestMatchComponents = components
-    }
-  }
-
-  if (!bestMatch) return oid
-
-  // If exact match, return just the name
-  if (normalized === bestMatch.oidString) {
-    return bestMatch.name
-  }
-
-  // Otherwise append the instance suffix (skip the dot after bestMatch.oidString)
-  const suffix = normalized.substring(bestMatch.oidString.length + 1)
-  return `${bestMatch.name}.${suffix}`
+  return resolveOidToNameWithResolver(oid, createOidNameResolver(nodes))
 }

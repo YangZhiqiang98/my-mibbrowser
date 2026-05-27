@@ -1,6 +1,13 @@
 import type { MibParseResult, MibNode } from '../../../main/mib/types'
 import type { MibNamedValue } from '../../../main/mib/types'
-import type { SnmpConfig, SnmpResult, SnmpSetValue, SnmpOperation, SnmpVarbind } from '../../../main/snmp/types'
+import type {
+  SnmpConfig,
+  SnmpResult,
+  SnmpSetValue,
+  SnmpOperation,
+  SnmpVarbind,
+  SnmpWalkRequestOptions
+} from '../../../main/snmp/types'
 import type {
   SnmpToolWindowContext,
   SnmpToolWindowOpenRequest,
@@ -29,8 +36,13 @@ declare global {
         getNext: (config: SnmpConfig, oids: string[]) => Promise<SnmpResult>
         getBulk: (config: SnmpConfig, oids: string[], maxReps?: number, nonRepeaters?: number) => Promise<SnmpResult>
         set: (config: SnmpConfig, values: SnmpSetValue[]) => Promise<SnmpResult>
-        walk: (config: SnmpConfig, oid: string) => Promise<SnmpResult>
-        bulkWalk: (config: SnmpConfig, oid: string, maxReps?: number) => Promise<SnmpResult>
+        walk: (config: SnmpConfig, oid: string, options?: SnmpWalkRequestOptions) => Promise<SnmpResult>
+        bulkWalk: (
+          config: SnmpConfig,
+          oid: string,
+          maxReps?: number,
+          options?: SnmpWalkRequestOptions
+        ) => Promise<SnmpResult>
         cancel: () => Promise<boolean>
         onWalkProgress: (callback: (varbinds: SnmpVarbind[]) => void) => () => void
         removeWalkListeners: () => void

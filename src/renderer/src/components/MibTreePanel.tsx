@@ -27,6 +27,7 @@ import type { MibTreeNodeData } from '../types'
 import type { SnmpResult } from '../../../main/snmp/types'
 import { buildTreeFromNodes } from '../utils/mibTreeUtils'
 import { buildResultSession, initResolveContext, resolveVarbind } from '../utils/resultColumns'
+import { createStreamingResultBatcher } from '../utils/streamingResultBatcher'
 import { isTableColumnChild } from '../utils/tableSession'
 import type { MibParseResult } from '../../../main/mib/types'
 
@@ -357,18 +358,21 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
 
     let removeProgressListener: (() => void) | null = null
     let resolveCtx: ReturnType<typeof initResolveContext> | null = null
+    let streamBatcher: ReturnType<typeof createStreamingResultBatcher> | null = null
+    let streamedRowCount = 0
 
     if (isStreaming) {
       initResultSession(operation, oid)
       resolveCtx = initResolveContext(mibTree)
+      streamBatcher = createStreamingResultBatcher(appendResultVarbinds)
 
       removeProgressListener = window.api.snmp.onWalkProgress((rawVarbinds) => {
         const ctx = resolveCtx
         if (!ctx) return
         const resolved = rawVarbinds.map((vb) => resolveVarbind(vb, ctx, 0))
-        appendResultVarbinds(resolved)
-        const currentCount = useAppStore.getState().currentResult?.varbinds.length ?? 0
-        setStatusMessage(`${operation}: ${currentCount} result(s)...`)
+        streamedRowCount += resolved.length
+        streamBatcher?.push(resolved)
+        setStatusMessage(`${operation}: ${streamedRowCount} result(s)...`)
       })
     }
 
@@ -398,14 +402,17 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
           break
         }
         case 'WALK':
-          result = await window.api.snmp.walk(snmpConfig, oid)
+          result = await window.api.snmp.walk(snmpConfig, oid, { omitFinalVarbinds: true })
           break
         case 'BULK_WALK':
-          result = await window.api.snmp.bulkWalk(snmpConfig, oid, snmpConfig.bulkMaxRepetitions)
+          result = await window.api.snmp.bulkWalk(snmpConfig, oid, snmpConfig.bulkMaxRepetitions, {
+            omitFinalVarbinds: true
+          })
           break
       }
 
       if (result.success) {
+        streamBatcher?.flush()
         if (result.aborted) {
           // User-cancelled path: keep the collected varbinds (WALK / BULK_WALK
           // partial results) and surface "aborted at N rows" on the status
@@ -455,6 +462,8 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
       message.error(`Request failed: ${errMsg}`)
       setStatusMessage(`Error: ${errMsg}`)
     } finally {
+      streamBatcher?.flush()
+      streamBatcher?.dispose()
       setIsQuerying(false)
       if (removeProgressListener) {
         removeProgressListener()
