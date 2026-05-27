@@ -1303,3 +1303,38 @@ Cached renderer MIB tree DataNode conversion so unchanged branches preserve obje
 ### Next Steps
 
 - None - task complete
+
+
+## Session 35: Tool window context slimming
+
+**Date**: 2026-05-27
+**Task**: Tool window context slimming
+**Branch**: `main`
+
+### Summary
+
+Removed full MIB tree snapshots from tool-window open/context payloads, added slim node/subtree conversion, derived GET/SET result context from current rows, and updated the tool-window IPC spec; verified typecheck, lint, tests, and build.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8068eb2` | (see git log) |
+| `1fba322` | (see git log) |
+| `e2d278a` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
