@@ -85,6 +85,22 @@ describe('MIB tree cache', () => {
     expect(buildTree).not.toHaveBeenCalled()
   })
 
+  it('clears the cached tree when invalidated with no modules', () => {
+    const buildTree = vi.fn((modules: MibModule[]) =>
+      modules.length > 0 ? [makeNode('rebuilt', '1.3')] : [makeNode('root-only', '1')]
+    )
+    const onTreeUpdated = vi.fn()
+    const cache = createMibTreeCache(buildTree, onTreeUpdated)
+    const populatedTree = [makeNode('snapshot', '1.3.6')]
+
+    cache.setTree(populatedTree)
+    cache.invalidate()
+
+    expect(cache.getTree([])).toEqual([])
+    expect(buildTree).not.toHaveBeenCalled()
+    expect(onTreeUpdated).toHaveBeenLastCalledWith([])
+  })
+
   it('attaches a current tree snapshot only to load results with parsed modules', () => {
     const modules = [makeModule('TEST-MIB')]
     const tree = [makeNode('snapshot', '1.3.6')]

@@ -213,6 +213,15 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
     })
   }, [treeIndex])
 
+  // Clean up stale search matches when cache refresh removes tree nodes.
+  useEffect(() => {
+    const valid = searchMatchIds.filter(k => treeIndex.validNodeIds.has(k))
+    if (valid.length === searchMatchIds.length) return
+
+    setSearchMatchIds(valid)
+    setCurrentMatchIndex(current => valid.length === 0 ? 0 : Math.min(current, valid.length - 1))
+  }, [searchMatchIds, treeIndex])
+
   const showMibParseDiagnostics = useCallback((result: MibParseResult): void => {
     const diagnostics = buildMibDiagnostics(result)
     const totalCount = diagnostics.parseErrors.length + diagnostics.dependencyWarnings.length + diagnostics.warnings.length
@@ -256,8 +265,11 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
 
     const moduleNames = getUniqueModuleNames(nodes)
     setLoadedModules(moduleNames)
+    if (selectedNode && !nodes.some((node) => node.id === selectedNode.id)) {
+      setSelectedNode(null)
+    }
     return moduleNames.length
-  }, [setLoadedModules, setMibTree])
+  }, [selectedNode, setLoadedModules, setMibTree, setSelectedNode])
 
   const loadCacheDirectories = useCallback(async (): Promise<void> => {
     setIsCacheDirectoriesLoading(true)

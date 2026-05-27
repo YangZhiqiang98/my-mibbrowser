@@ -25,6 +25,10 @@ export function createMibTreeCache(
     },
     getTree: (modules) => {
       if (isDirty) {
+        if (modules.length === 0) {
+          setTree([])
+          return nodes
+        }
         setTree(buildTree(modules))
       }
       return nodes
