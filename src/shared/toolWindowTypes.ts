@@ -59,14 +59,12 @@ export interface SnmpToolWindowOpenRequest {
   kind: SnmpToolWindowKind
   seed: ToolWindowMibNode | ToolWindowSetSeed
   snmpConfig: SnmpConfig
-  mibTree: ToolWindowMibNode[]
 }
 
 export interface SnmpToolWindowContext {
   kind: SnmpToolWindowKind
   seed: ToolWindowMibNode | ToolWindowSetSeed
   snmpConfig: SnmpConfig
-  mibTree: ToolWindowMibNode[]
 }
 
 export interface SnmpToolWindowResultUpdate {

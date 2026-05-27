@@ -46,16 +46,16 @@ export function registerToolWindowHandlers(mainWindow: BrowserWindow): void {
 function handleOpenToolWindow(_event: IpcMainInvokeEvent, request: SnmpToolWindowOpenRequest): void {
   debugLog('tool-window', 'open request', {
     kind: request.kind,
-    seed: request.seed,
-    snmpConfig: request.snmpConfig,
-    mibNodeCount: request.mibTree.length
+    seed: describeToolWindowSeed(request.seed),
+    snmpHost: request.snmpConfig.host,
+    snmpPort: request.snmpConfig.port,
+    snmpVersion: request.snmpConfig.version
   })
 
   const context: SnmpToolWindowContext = {
     kind: request.kind,
     seed: request.seed,
-    snmpConfig: request.snmpConfig,
-    mibTree: request.mibTree
+    snmpConfig: request.snmpConfig
   }
 
   if (toolWindowEntry && !toolWindowEntry.window.isDestroyed()) {
@@ -108,6 +108,26 @@ function handleOpenToolWindow(_event: IpcMainInvokeEvent, request: SnmpToolWindo
     toolWindow.loadURL(`${process.env['ELECTRON_RENDERER_URL']}?${route}`)
   } else {
     toolWindow.loadFile(join(__dirname, '../renderer/index.html'), { query: { tool: 'snmp' } })
+  }
+}
+
+function describeToolWindowSeed(seed: SnmpToolWindowOpenRequest['seed']): Record<string, unknown> {
+  if ('node' in seed) {
+    return {
+      nodeId: seed.node.id,
+      nodeName: seed.node.name,
+      nodeKind: seed.node.kind,
+      nodeOid: seed.node.oid,
+      hasInstance: seed.instance !== undefined,
+      hasTargetValue: seed.targetValue !== undefined
+    }
+  }
+
+  return {
+    nodeId: seed.id,
+    nodeName: seed.name,
+    nodeKind: seed.kind,
+    nodeOid: seed.oid
   }
 }
 

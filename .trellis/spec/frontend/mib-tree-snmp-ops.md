@@ -468,7 +468,9 @@ The instance composition rule is the same for GET and SET tool-window rows: `bui
 
 - `openGetDialog(node)` and `openSetDialog(node)` in `MibTreePanel.tsx` must call `window.api.snmpTool.open(...)`. Right-click menu items for GET / SET must not call `executeSnmpOperation('GET' | 'SET', ...)`. The latter signature is reserved for the direct-fire operations.
 - GET and SET share one singleton tool window. Opening GET or SET while the tool window is already open focuses that same window and replaces its context/seed with the newly selected node.
-- Tool window open payloads must include `kind`, `seed`, `snmpConfig`, and `mibTree`. `kind` records the launch source (`'get' | 'set'`) and influences how the initial seed is interpreted; it does not create separate windows. The shared contract lives in `src/shared/toolWindowTypes.ts`; do not define ad-hoc IPC payloads in component files.
+- Tool window open payloads must include `kind`, `seed`, and `snmpConfig` only. Do not send the full main-window `mibTree` snapshot in `window.api.snmpTool.open(...)`. `kind` records the launch source (`'get' | 'set' | 'table'`) and influences how the initial seed is interpreted; it does not create separate windows. The shared contract lives in `src/shared/toolWindowTypes.ts`; do not define ad-hoc IPC payloads in component files.
+- GET / SET seeds and cross-window drag payloads use slim `ToolWindowMibNode` objects with `children: []`. The tool window builds the result-resolution MIB context from the current rows via `buildToolWindowResultMibTree(...)`.
+- Table Viewer seeds must preserve the selected table/entry subtree via `toToolWindowMibSubtree(...)`, because `resolveTableTarget(...)` needs the entry and direct column children.
 - The tool window uses the multi-row + drag-append shape: the whole window panel is a drop target that consumes the main-process IPC drag bridge (see [state-management.md](./state-management.md) → "Cross-Window Drag-Bridge via Main-Process IPC"), each row has an instance Input/Select with a `WALK` discovery button, and the header exposes both `执行 GET` and `执行 SET`.
 - Tool windows must publish result/status/toast changes back to the main window through `window.api.snmpTool.updateMainResult`, `updateMainStatus`, and `showMainToast`. The main window applies these messages in `MainWindowToolBridge` so the `ResultsPanel` remains authoritative in the main window.
 - The legacy `MibTreePanel.handleSetConfirm` flow, single-OID SET `Modal`, and main-renderer multi-node GET / SET AntD modals have been removed. Any reintroduction of "fire GET / SET directly from the menu" requires lifting the instance-picker affordance somewhere else first (e.g., into a slash command or keyboard shortcut), not regressing the tool-window workflow.
@@ -496,10 +498,10 @@ window.api.snmpTool.onContextUpdated(callback): () => void
 
 #### 3. Contracts
 
-- `SnmpToolWindowOpenRequest.kind`: `'get' | 'set'`.
-- `seed`: `ToolWindowMibNode` for GET, `{ node, instance?, targetValue? }` for SET.
+- `SnmpToolWindowOpenRequest.kind`: `'get' | 'set' | 'table'`.
+- `seed`: slim `ToolWindowMibNode` for GET, `{ node, instance?, targetValue? }` for SET, and a table/entry `ToolWindowMibNode` subtree for Table Viewer.
 - `snmpConfig`: snapshot of the current main-window SNMP config at open/reset time.
-- `mibTree`: snapshot used by `buildResultSession` in the tool window.
+- `mibTree` is not part of the tool-window context. GET / SET result sessions must call `buildResultSession(...)` with a slim tree derived from current rows. Table Viewer uses its launch seed subtree and does not need the full main-window tree.
 - `getContext()` returns `null` only if a renderer is not known to be a GET / SET tool window.
 - Reopen of the existing singleton sends `snmp-tool:context-updated`; the tool window must reset rows from the new seed.
 
@@ -517,13 +519,16 @@ window.api.snmpTool.onContextUpdated(callback): () => void
 
 - Good: right-click GET opens a real Electron window, can leave the main window bounds, executes GET, and updates the main `ResultsPanel`.
 - Base: right-click SET while the GET / SET tool window is open focuses that same window and replaces its first row with the new selected node.
+- Good: right-click Table Viewer sends only the selected table/entry subtree, not the full main MIB tree, and still resolves columns from the entry children.
 - Good: after SET succeeds, the window stays open and the user can immediately click `执行 GET` to verify the result.
+- Bad: passing `mibTree` from `MibTreePanel.tsx` into every `snmpTool.open(...)` call; large loaded MIBs are copied through IPC on every tool-window launch/reset.
 - Bad: using AntD `Modal` for production GET / SET means the UI is trapped inside the main renderer window and fails the drag-out requirement.
 
 #### 6. Tests Required
 
 - `npm run typecheck` must cover shared IPC types, preload API declarations, and renderer consumers.
 - `npm run lint` must pass for Electron main/preload/renderer code.
+- Unit tests should cover slim `ToolWindowMibNode` conversion, Table Viewer subtree preservation, and GET / SET result-context derivation from rows.
 - Manual/E2E smoke should verify singleton reset, drag-out behavior, whole-window cross-window drag append, same-window GET-after-SET, and main-window result updates.
 
 #### 7. Wrong vs Correct
@@ -539,9 +544,29 @@ setGetDialogSeed(node)
 ```typescript
 window.api.snmpTool.open({
   kind: 'get',
+  seed: toSlimToolWindowMibNode(node),
+  snmpConfig
+})
+```
+
+##### Wrong
+
+```typescript
+window.api.snmpTool.open({
+  kind: 'get',
   seed: node,
   snmpConfig,
   mibTree
+})
+```
+
+##### Correct
+
+```typescript
+window.api.snmpTool.open({
+  kind: 'get',
+  seed: toSlimToolWindowMibNode(node),
+  snmpConfig
 })
 ```
 

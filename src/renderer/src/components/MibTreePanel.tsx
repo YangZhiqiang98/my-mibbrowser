@@ -28,6 +28,7 @@ import type { SnmpResult } from '../../../main/snmp/types'
 import { buildTreeFromNodes } from '../utils/mibTreeUtils'
 import { buildMibTreeIndex } from '../utils/mibTreeIndex'
 import { createMibTreeDataNodeBuilder } from '../utils/mibTreeDataNodes'
+import { toSlimToolWindowMibNode, toToolWindowMibSubtree } from '../utils/toolWindowMibContext'
 import { buildResultSession, initResolveContext, resolveVarbind } from '../utils/resultColumns'
 import { createStreamingResultBatcher } from '../utils/streamingResultBatcher'
 import { isTableColumnChild } from '../utils/tableSession'
@@ -456,13 +457,12 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
     }
     window.api.snmpTool.open({
       kind: 'set',
-      seed: { node },
-      snmpConfig,
-      mibTree
+      seed: { node: toSlimToolWindowMibNode(node) },
+      snmpConfig
     }).catch((error) => {
       appMessage.error(`打开 SET 窗口失败：${error instanceof Error ? error.message : String(error)}`)
     })
-  }, [appMessage, mibTree, snmpConfig])
+  }, [appMessage, snmpConfig])
 
   /**
    * Open the independent GET / SET tool window seeded for GET. Right-click
@@ -476,13 +476,12 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
     }
     window.api.snmpTool.open({
       kind: 'get',
-      seed: node,
-      snmpConfig,
-      mibTree
+      seed: toSlimToolWindowMibNode(node),
+      snmpConfig
     }).catch((error) => {
       appMessage.error(`打开 GET 窗口失败：${error instanceof Error ? error.message : String(error)}`)
     })
-  }, [appMessage, mibTree, snmpConfig])
+  }, [appMessage, snmpConfig])
 
   const openTableViewer = useCallback((node: MibTreeNodeData) => {
     if (!node.oid) {
@@ -495,13 +494,12 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
     }
     window.api.snmpTool.open({
       kind: 'table',
-      seed: node,
-      snmpConfig,
-      mibTree
+      seed: toToolWindowMibSubtree(node),
+      snmpConfig
     }).catch((error) => {
       appMessage.error(`打开 Table Viewer 失败：${error instanceof Error ? error.message : String(error)}`)
     })
-  }, [appMessage, mibTree, snmpConfig])
+  }, [appMessage, snmpConfig])
 
   const contextMenuItems: MenuProps['items'] = useMemo(() => {
     if (!contextMenuNode) return []
@@ -620,7 +618,7 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
     if (node) {
       dragSequence.current += 1
       info.event.dataTransfer?.setData('text/plain', node.id)
-      window.api.snmpTool.setDragNode(node).catch(() => {})
+      window.api.snmpTool.setDragNode(toSlimToolWindowMibNode(node)).catch(() => {})
     }
   }, [treeIndex])
 

@@ -19,6 +19,7 @@ import type { SnmpSetValue } from '../../../../main/snmp/types'
 import type { SnmpToolWindowContext, ToolWindowSetSeed } from '../../../../shared/toolWindowTypes'
 import type { MibTreeNodeData, ResultSession } from '../../types'
 import { buildResultSession } from '../../utils/resultColumns'
+import { buildToolWindowResultMibTree } from '../../utils/toolWindowMibContext'
 import {
   consumeToolWindowDragNode,
   publishResultToMain,
@@ -70,6 +71,10 @@ export function SetToolWindowContent({ context }: SetToolWindowContentProps): Re
       ? context.seed as ToolWindowSetSeed
       : { node: context.seed as MibTreeNodeData }
   ), [context.kind, context.seed])
+  const resultMibTree = useMemo(
+    () => buildToolWindowResultMibTree(rows.map((row) => row.node)),
+    [rows]
+  )
 
   useEffect(() => {
     reset()
@@ -201,7 +206,7 @@ export function SetToolWindowContent({ context }: SetToolWindowContentProps): Re
     try {
       const result = await window.api.snmp.get(context.snmpConfig, oids)
       if (result.success) {
-        const session: ResultSession = buildResultSession('GET', oids[0], result, context.mibTree as MibTreeNodeData[])
+        const session: ResultSession = buildResultSession('GET', oids[0], result, resultMibTree)
         if (result.aborted) {
           publishResultToMain(session, {
             statusMessage: `GET: aborted at ${session.varbinds.length} row(s), ${result.responseTime}ms`
@@ -232,7 +237,7 @@ export function SetToolWindowContent({ context }: SetToolWindowContentProps): Re
       setSubmittingOperation(null)
       publishStatusToMain({ isQuerying: false })
     }
-  }, [appMessage, context.mibTree, context.snmpConfig, rows])
+  }, [appMessage, context.snmpConfig, resultMibTree, rows])
 
   const handleSetSubmit = useCallback(async () => {
     if (rows.length === 0) return
@@ -258,7 +263,7 @@ export function SetToolWindowContent({ context }: SetToolWindowContentProps): Re
     try {
       const result = await window.api.snmp.set(context.snmpConfig, values)
       if (result.success) {
-        const session: ResultSession = buildResultSession('SET', values[0].oid, result, context.mibTree as MibTreeNodeData[])
+        const session: ResultSession = buildResultSession('SET', values[0].oid, result, resultMibTree)
         if (result.aborted) {
           publishResultToMain(session, {
             statusMessage: `SET: aborted at ${session.varbinds.length} row(s), ${result.responseTime}ms`
@@ -289,7 +294,7 @@ export function SetToolWindowContent({ context }: SetToolWindowContentProps): Re
       setSubmittingOperation(null)
       publishStatusToMain({ isQuerying: false })
     }
-  }, [appMessage, context.mibTree, context.snmpConfig, errorsByRow, rows])
+  }, [appMessage, context.snmpConfig, errorsByRow, resultMibTree, rows])
 
   const submitting = submittingOperation !== null
 
