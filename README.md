@@ -16,9 +16,9 @@ MIB Browser 是一个基于 Electron、React 和 TypeScript 构建的桌面 SNMP
 
 | 模块 | 能力 |
 |---|---|
-| MIB 加载 | 支持文件/目录加载、依赖顺序解析、缺失依赖诊断、缓存复用 |
-| MIB 树 | 支持虚拟化浏览、搜索跳转、节点详情、右键 SNMP 操作 |
-| SNMP 查询 | 支持 v1/v2c/v3、GET、GETBULK、WALK、BULK WALK、SET |
+| MIB 加载 | 支持文件/目录/拖拽加载、依赖顺序解析、缺失依赖诊断、缓存复用 |
+| MIB 树 | 支持索引化搜索跳转、展开/折叠、节点详情、右键 SNMP 操作 |
+| SNMP 查询 | 支持 v1/v2c/v3、GET、GETNEXT、GETBULK、WALK、BULK WALK、SET |
 | 工具窗口 | GET、SET、Table Viewer 使用独立 Electron 工具窗口 |
 | 表查看/编辑 | 自动识别 table/entry/columns/instance，支持过滤、排序、分页、复制、CSV 导出、基础 SET 编辑，以及 RowStatus 表的 Add Row / Delete Row |
 | Trap / Inform 控制台 | 支持本地 UDP Trap/Inform 监听、启动/停止、实时事件查看、MIB 名称解析、过滤、复制、清空和自动滚动 |
@@ -76,6 +76,17 @@ npm run build
 
 连接设置会自动记住上次使用的完整设备配置，包括 Host/IP、端口、SNMP 版本、认证信息、超时、重试、Bulk 参数和 transport。Profiles 仍用于保存多套命名配置。
 
+## 性能与大树处理
+
+当前版本针对大 MIB 目录和高频树操作做了几处优化：
+
+- MIB 树搜索、选择和展开路径使用预构建索引，避免在交互时反复递归扫描整棵树。
+- Ant Design Tree 的 `DataNode` 会复用未变化分支，搜索高亮或局部状态变化时减少 React 节点重建。
+- main 进程缓存构建后的 MIB 树，只在已加载模块集合变化时重新构建。
+- 文件/目录/拖拽加载成功后，IPC 响应会直接带回当前 MIB 树，renderer 不再立刻追加一次完整 `mib:get-tree` 拉取。
+- 独立 GET / SET / Table Viewer 工具窗口只接收所需节点或子树上下文，不再随每次打开传输完整 MIB 树。
+- WALK / BULK WALK 支持进度批次流式显示，长时间查询时结果面板可以边收边展示。
+
 ## SNMPv3 支持
 
 当前 SNMPv3 能力基于项目使用的 `net-snmp` 包：
@@ -109,6 +120,25 @@ npx electron-builder
 - 安装包产物：`dist/`
 
 应用图标资源位于 `build/`。
+
+## 开发验证
+
+常规代码变更提交前建议完整执行：
+
+```bash
+npm run typecheck
+npm run lint
+npm test
+npm run build
+```
+
+文档-only 变更通常不需要重新构建应用，但仍建议至少检查：
+
+```bash
+npm run typecheck
+npm run lint
+npm test
+```
 
 ## 项目结构
 
@@ -157,6 +187,12 @@ node node_modules/electron/install.js
 ## 开发说明
 
 本项目使用 Trellis 管理任务、代码规范和工作记录，项目规范见 `.trellis/spec/`。
+
+重要开发约束：
+
+- renderer 只能通过 `window.api` 调用 Electron 能力，不直接导入 `electron`。
+- main/preload/renderer 共享的 IPC 类型放在 `src/main/*/types.ts` 或 `src/shared/`。
+- MIB IPC 合约、SNMP 树操作约束和工具窗口约束已经记录在 `.trellis/spec/`，修改相关流程前先读对应 spec。
 
 ## License
 
