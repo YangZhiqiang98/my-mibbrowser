@@ -143,6 +143,8 @@ export interface MibParseResult {
   warnings: string[]
   /** Structured dependency warnings */
   dependencyWarnings: MibDependencyWarning[]
+  /** Current full MIB tree snapshot after successful load operations */
+  tree?: MibNode[]
 }
 
 /**

@@ -8,6 +8,7 @@ import {
 } from '../mib/parser'
 import type { MibOidNameResolver } from '../mib/parser'
 import type { MibParseResult, MibNode, MibModule } from '../mib/types'
+import { attachTreeToLoadedResult, createMibTreeCache } from '../mib/treeCache'
 import { snmpGet, snmpGetNext, snmpGetBulk, snmpSet, snmpWalk, snmpBulkWalk, cancelCurrentSnmpOperation } from '../snmp/client'
 import type { SnmpConfig, SnmpResult, SnmpSetValue, SnmpVarbind, SnmpWalkRequestOptions } from '../snmp/types'
 import type { WalkOptions } from '../snmp/client'
@@ -57,6 +58,21 @@ interface AppSettings {
 function setMibNodes(nodes: MibNode[]): void {
   mibNodes = nodes
   mibOidNameResolver = createOidNameResolver(nodes)
+}
+
+const mibTreeCache = createMibTreeCache(buildMibTree, setMibNodes)
+
+function markMibTreeDirty(): void {
+  mibTreeCache.invalidate()
+}
+
+function getCurrentMibTree(): MibNode[] {
+  return mibTreeCache.getTree(accumulatedModules)
+}
+
+function refreshMibTree(): MibNode[] {
+  markMibTreeDirty()
+  return getCurrentMibTree()
 }
 
 /**
@@ -192,7 +208,7 @@ export function loadMibCache(): void {
     }
 
     if (accumulatedModules.length > 0) {
-      setMibNodes(buildMibTree(accumulatedModules))
+      refreshMibTree()
     }
   } catch {
     // Directory read error - ignore
@@ -294,14 +310,19 @@ async function handleOpenMibFiles(): Promise<MibParseResult> {
   // unrelated modules from other source dirs.
   const fileKey = '__file_load__'
   const previousForKey = directoryModuleMap.get(fileKey) ?? []
+  let modulesChanged = false
   if (previousForKey.length > 0) {
     const previousSet = new Set(previousForKey)
     accumulatedModules = accumulatedModules.filter(m => !previousSet.has(m))
+    modulesChanged = true
   }
-  accumulatedModules = [...accumulatedModules, ...parseResult.modules]
+  if (parseResult.modules.length > 0) {
+    accumulatedModules = [...accumulatedModules, ...parseResult.modules]
+    modulesChanged = true
+  }
   directoryModuleMap.set(fileKey, [...parseResult.modules])
 
-  setMibNodes(buildMibTree(accumulatedModules))
+  const tree = modulesChanged ? refreshMibTree() : getCurrentMibTree()
 
   // Track loaded file modules for caching
   if (parseResult.modules.length > 0) {
@@ -309,7 +330,7 @@ async function handleOpenMibFiles(): Promise<MibParseResult> {
   }
 
   debugLog('mib', 'open files finish', summarizeParseResult(parseResult))
-  return parseResult
+  return attachTreeToLoadedResult(parseResult, tree)
 }
 
 /**
@@ -339,22 +360,27 @@ async function handleOpenMibDirectory(): Promise<MibParseResult> {
   // (tracked by reference, not by name) so other directories' modules with
   // the same name are not collateral damage.
   const previousForDir = directoryModuleMap.get(dirPath) ?? []
+  let modulesChanged = false
   if (previousForDir.length > 0) {
     const previousSet = new Set(previousForDir)
     accumulatedModules = accumulatedModules.filter(m => !previousSet.has(m))
+    modulesChanged = true
   }
-  accumulatedModules = [...accumulatedModules, ...parseResult.modules]
+  if (parseResult.modules.length > 0) {
+    accumulatedModules = [...accumulatedModules, ...parseResult.modules]
+    modulesChanged = true
+  }
 
   // Update directory-module mapping with the fresh module references
   directoryModuleMap.set(dirPath, [...parseResult.modules])
 
-  setMibNodes(buildMibTree(accumulatedModules))
+  const tree = modulesChanged ? refreshMibTree() : getCurrentMibTree()
 
   // Save per-directory cache
   saveCacheForDirectory(dirPath)
 
   debugLog('mib', 'open directory finish', summarizeParseResult(parseResult))
-  return parseResult
+  return attachTreeToLoadedResult(parseResult, tree)
 }
 
 /**
@@ -382,19 +408,22 @@ function handleLoadMibContent(
   // user can build a DnD set incrementally.
   const survivingPrevious = previousForKey.filter(m => !newNames.has(m.name))
   const previousSet = new Set(previousForKey)
-  accumulatedModules = accumulatedModules.filter(m => !previousSet.has(m))
-  accumulatedModules = [...accumulatedModules, ...survivingPrevious, ...parseResult.modules]
+  const modulesChanged = parseResult.modules.length > 0
+  if (modulesChanged) {
+    accumulatedModules = accumulatedModules.filter(m => !previousSet.has(m))
+    accumulatedModules = [...accumulatedModules, ...survivingPrevious, ...parseResult.modules]
 
-  directoryModuleMap.set(fileKey, [...survivingPrevious, ...parseResult.modules])
+    directoryModuleMap.set(fileKey, [...survivingPrevious, ...parseResult.modules])
+  }
 
-  setMibNodes(buildMibTree(accumulatedModules))
+  const tree = modulesChanged ? refreshMibTree() : getCurrentMibTree()
 
   if (parseResult.modules.length > 0) {
     saveCacheForDirectory(fileKey)
   }
 
   debugLog('mib', 'load content finish', summarizeParseResult(parseResult))
-  return parseResult
+  return attachTreeToLoadedResult(parseResult, tree)
 }
 
 /**
@@ -438,7 +467,7 @@ function handleGetCacheDir(): string {
  * Get the current MIB tree
  */
 function handleGetMibTree(): MibNode[] {
-  return mibNodes
+  return getCurrentMibTree()
 }
 
 /**
@@ -448,7 +477,7 @@ function handleSearchMib(_event: IpcMainInvokeEvent, query: string): MibNode[] {
   if (!query || query.trim().length === 0) return []
 
   const lowerQuery = query.toLowerCase()
-  return mibNodes.filter(node =>
+  return getCurrentMibTree().filter(node =>
     node.name.toLowerCase().includes(lowerQuery) ||
     node.oidString.includes(lowerQuery)
   ).slice(0, 100) // Limit results

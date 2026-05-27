@@ -32,7 +32,7 @@ import { toSlimToolWindowMibNode, toToolWindowMibSubtree } from '../utils/toolWi
 import { buildResultSession, initResolveContext, resolveVarbind } from '../utils/resultColumns'
 import { createStreamingResultBatcher } from '../utils/streamingResultBatcher'
 import { isTableColumnChild } from '../utils/tableSession'
-import type { MibParseResult } from '../../../main/mib/types'
+import type { MibNode, MibParseResult } from '../../../main/mib/types'
 
 const ACCESS_COLOR_MAP: Record<string, string> = {
   'read-only': 'blue',
@@ -246,7 +246,7 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
     const result = await window.api.mib.openFiles()
     showMibParseDiagnostics(result)
     if (result.modules.length > 0) {
-      const nodes = await window.api.mib.getTree()
+      const nodes = await getLoadedMibTreeNodes(result)
       const tree = buildTreeFromNodes(nodes)
       setMibTree(tree)
       for (const mod of result.modules) {
@@ -264,7 +264,7 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
     const result = await window.api.mib.openDirectory()
     showMibParseDiagnostics(result)
     if (result.modules.length > 0) {
-      const nodes = await window.api.mib.getTree()
+      const nodes = await getLoadedMibTreeNodes(result)
       const tree = buildTreeFromNodes(nodes)
       setMibTree(tree)
       for (const mod of result.modules) {
@@ -678,7 +678,7 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
 
       showMibParseDiagnostics(result)
       if (result.modules.length > 0) {
-        const nodes = await window.api.mib.getTree()
+        const nodes = await getLoadedMibTreeNodes(result)
         const tree = buildTreeFromNodes(nodes)
         setMibTree(tree)
         for (const mod of result.modules) {
@@ -864,6 +864,10 @@ function buildMibDiagnostics(result: MibParseResult): MibDiagnosticsState {
     dependencyWarnings: result.dependencyWarnings.map((warning) => warning.message),
     warnings: result.warnings
   }
+}
+
+function getLoadedMibTreeNodes(result: MibParseResult): Promise<MibNode[]> | MibNode[] {
+  return result.tree ?? window.api.mib.getTree()
 }
 
 function truncateText(value: string, maxLength: number): string {

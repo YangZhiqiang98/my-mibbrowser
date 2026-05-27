@@ -22,6 +22,7 @@ This directory contains guidelines for backend development. Fill in each file wi
 | [App Settings](./app-settings.md) | App-level preference persistence and settings IPC contract | Filled |
 | [App Packaging](./app-packaging.md) | Electron packaging resources and runtime asset conventions | Filled |
 | [SNMP Guidelines](./snmp-guidelines.md) | OID comparison, leading-dot normalization, walk termination | Filled |
+| [MIB IPC Contract](./mib-ipc.md) | MIB load-result tree snapshots and cached `mib:get-tree` contract | Filled |
 
 ---
 
