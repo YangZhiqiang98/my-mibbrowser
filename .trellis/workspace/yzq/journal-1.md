@@ -1268,3 +1268,38 @@ Indexed renderer MIB tree lookups for search, selection, context menu actions, s
 ### Next Steps
 
 - None - task complete
+
+
+## Session 34: Tree DataNode caching
+
+**Date**: 2026-05-27
+**Task**: Tree DataNode caching
+**Branch**: `main`
+
+### Summary
+
+Cached renderer MIB tree DataNode conversion so unchanged branches preserve object identity across render and search-highlight changes; verified typecheck, lint, tests, and build.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `6236f05` | (see git log) |
+| `99e7d87` | (see git log) |
+| `235d272` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
