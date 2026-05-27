@@ -1,8 +1,14 @@
 # MIB Browser
 
-MIB Browser 是一个基于 Electron、React 和 TypeScript 构建的桌面 SNMP/MIB 工具。它用于加载厂商 MIB、浏览 MIB 树、执行 SNMP 查询，以及查看和编辑 SNMP 表。
+MIB Browser 是一个基于 Electron、React 和 TypeScript 构建的桌面 SNMP/MIB 工具，用于加载厂商 MIB、浏览 OID 树、执行 SNMP 查询、查看和编辑 SNMP 表。
 
-项目目标很直接：减少手写 OID，让常见的设备查询、表数据检查和连接调试更顺手。
+它适合用在这些场景：
+
+- 把厂商 MIB 目录加载成可搜索、可右键操作的 MIB 树。
+- 减少手写 OID，通过 MIB 节点直接发起 GET、SET、GETBULK、WALK、BULK WALK。
+- 用独立工具窗口处理 GET / SET / Table Viewer，方便边看主界面边调试设备。
+- 查看表数据、编辑可写单元格，并对带 RowStatus 语义的表执行 Add Row / Delete Row。
+- 监听本地 Trap / Inform，结合 MIB 名称解析和 Debug Logs 排查连接或协议问题。
 
 ## 界面预览
 
@@ -12,18 +18,18 @@ MIB Browser 是一个基于 Electron、React 和 TypeScript 构建的桌面 SNMP
 
 ![Table Viewer](doc/png/table-viewer.png)
 
-## 主要能力
+## 核心能力
 
-| 模块 | 能力 |
+| 工作流 | 支持能力 |
 |---|---|
-| MIB 加载 | 支持文件/目录/拖拽加载、依赖顺序解析、缺失依赖诊断、缓存复用 |
-| MIB 树 | 支持索引化搜索跳转、展开/折叠、节点详情、右键 SNMP 操作 |
-| SNMP 查询 | 支持 v1/v2c/v3、GET、GETNEXT、GETBULK、WALK、BULK WALK、SET |
-| 工具窗口 | GET、SET、Table Viewer 使用独立 Electron 工具窗口 |
-| 表查看/编辑 | 自动识别 table/entry/columns/instance，支持过滤、排序、分页、复制、CSV 导出、基础 SET 编辑，以及 RowStatus 表的 Add Row / Delete Row |
-| Trap / Inform 控制台 | 支持本地 UDP Trap/Inform 监听、启动/停止、实时事件查看、MIB 名称解析、过滤、复制、清空和自动滚动 |
-| 连接配置 | 支持 Profiles，并自动恢复上次使用的完整设备配置 |
-| Debug Logs | Debug Mode 开启后，可在应用内查看 SNMP/MIB/IPC 调试日志 |
+| MIB 加载 | 文件、目录、拖拽加载；递归扫描；依赖顺序解析；缺失依赖诊断；缓存复用 |
+| MIB 浏览 | 索引化搜索跳转；展开/折叠；节点详情；复制 OID/名称；右键发起 SNMP 操作 |
+| SNMP 查询 | SNMP v1/v2c/v3；GET、GETNEXT、GETBULK、WALK、BULK WALK、SET；流式 WALK / BULK WALK 结果 |
+| 工具窗口 | GET、SET、Table Viewer 使用独立 Electron 窗口；支持主窗口拖拽节点到工具窗口 |
+| 表查看/编辑 | 自动识别 table/entry/columns/instance；过滤、排序、分页、复制、CSV 导出；基础 SET 编辑；RowStatus Add Row / Delete Row |
+| 通知接收 | 本地 UDP Trap / Inform 监听；实时事件查看；MIB 名称解析；过滤、复制、清空和自动滚动 |
+| 连接配置 | Profiles；自动恢复上次设备配置，包括 Host、端口、版本、认证、超时、重试、Bulk 参数和 transport |
+| 调试 | Debug Mode；应用内 SNMP/MIB/IPC 调试日志 |
 
 ## 快速开始
 
@@ -33,61 +39,23 @@ MIB Browser 是一个基于 Electron、React 和 TypeScript 构建的桌面 SNMP
 - npm 9 或更高版本
 - Windows、macOS 或 Linux
 
-安装依赖：
+安装依赖并启动开发模式：
 
 ```bash
 npm install
-```
-
-启动开发模式：
-
-```bash
 npm run dev
 ```
 
-## 常用脚本
+## 基本使用流程
 
-| 命令 | 说明 |
-|---|---|
-| `npm run dev` | 启动开发模式 |
-| `npm run build` | 构建 main、preload、renderer 产物 |
-| `npm run preview` | 预览构建后的应用 |
-| `npm run typecheck` | 运行 node 和 web 类型检查 |
-| `npm run lint` | 对 `src/` 运行 ESLint |
-| `npm test` | 运行 Vitest 测试 |
-
-提交前建议至少运行：
-
-```bash
-npm run typecheck
-npm run lint
-npm test
-npm run build
-```
-
-## 使用说明
-
-1. 加载 MIB：优先选择厂商 MIB 目录，应用会递归扫描常见 MIB 文件并按依赖顺序解析。
+1. 加载 MIB：优先选择厂商 MIB 目录，应用会递归扫描 `.my`、`.mib`、`.txt` 等常见 MIB 文件并按依赖顺序解析。
 2. 配置设备：在连接设置中填写 Host/IP、端口、SNMP 版本、community 或 SNMPv3 参数。
 3. 执行查询：可以手动输入 OID，也可以从 MIB 树节点右键发起 GET、SET、GETBULK、WALK、BULK WALK。
 4. 查看表数据：对 `table` 或 `entry` 节点打开 Table Viewer，按行列查看实例数据。
-5. 接收通知：打开 Trap / Inform Console，默认监听 `udp4:9162`；如需标准端口可改为 `162`，但部分系统需要管理员权限。
+5. 接收通知：打开 Trap / Inform Console，默认监听 `udp4:9162`；如需标准端口 `162`，部分系统需要管理员权限。
 6. 调试问题：开启 Debug Mode 后，通过 Debug Logs 面板查看请求参数、耗时、错误和返回数量。
 
-连接设置会自动记住上次使用的完整设备配置，包括 Host/IP、端口、SNMP 版本、认证信息、超时、重试、Bulk 参数和 transport。Profiles 仍用于保存多套命名配置。
-
-## 性能与大树处理
-
-当前版本针对大 MIB 目录和高频树操作做了几处优化：
-
-- MIB 树搜索、选择和展开路径使用预构建索引，避免在交互时反复递归扫描整棵树。
-- Ant Design Tree 的 `DataNode` 会复用未变化分支，搜索高亮或局部状态变化时减少 React 节点重建。
-- main 进程缓存构建后的 MIB 树，只在已加载模块集合变化时重新构建。
-- 文件/目录/拖拽加载成功后，IPC 响应会直接带回当前 MIB 树，renderer 不再立刻追加一次完整 `mib:get-tree` 拉取。
-- 独立 GET / SET / Table Viewer 工具窗口只接收所需节点或子树上下文，不再随每次打开传输完整 MIB 树。
-- WALK / BULK WALK 支持进度批次流式显示，长时间查询时结果面板可以边收边展示。
-
-## SNMPv3 支持
+## SNMPv3 与协议边界
 
 当前 SNMPv3 能力基于项目使用的 `net-snmp` 包：
 
@@ -98,7 +66,35 @@ npm run build
 | Privacy Protocol | DES、AES-128、AES-256 Blumenthal、AES-256 Reeder |
 | Transport | UDP/IPv4、UDP/IPv6 |
 
-不支持的协议不会静默降级，创建 session 前会给出明确错误。
+不支持的协议不会静默降级，创建 session 前会给出明确错误。SNMP over TCP、TLS/DTLS、TSM、DOCSIS DH 等不在当前 `net-snmp` 能力范围内。
+
+## 实现要点
+
+- MIB 树搜索、选择和展开路径使用预构建索引，避免交互时反复递归扫描整棵树。
+- Ant Design Tree 的 `DataNode` 会复用未变化分支，减少搜索高亮或局部状态变化时的 React 节点重建。
+- main 进程缓存构建后的 MIB 树，只在已加载模块集合变化时重新构建。
+- MIB 加载成功后，IPC 响应直接带回当前 MIB 树，renderer 不再立刻追加一次完整 `mib:get-tree` 拉取。
+- GET / SET / Table Viewer 工具窗口只接收所需节点或子树上下文，不随每次打开传输完整 MIB 树。
+
+## 开发命令
+
+| 命令 | 说明 |
+|---|---|
+| `npm run dev` | 启动开发模式 |
+| `npm run build` | 构建 main、preload、renderer 产物 |
+| `npm run preview` | 预览构建后的应用 |
+| `npm run typecheck` | 运行 node 和 web 类型检查 |
+| `npm run lint` | 对 `src/` 运行 ESLint |
+| `npm test` | 运行 Vitest 测试 |
+
+常规代码变更提交前建议执行：
+
+```bash
+npm run typecheck
+npm run lint
+npm test
+npm run build
+```
 
 ## 构建与打包
 
@@ -118,27 +114,7 @@ npx electron-builder
 
 - Electron/Vite 产物：`out/`
 - 安装包产物：`dist/`
-
-应用图标资源位于 `build/`。
-
-## 开发验证
-
-常规代码变更提交前建议完整执行：
-
-```bash
-npm run typecheck
-npm run lint
-npm test
-npm run build
-```
-
-文档-only 变更通常不需要重新构建应用，但仍建议至少检查：
-
-```bash
-npm run typecheck
-npm run lint
-npm test
-```
+- 应用图标资源：`build/`
 
 ## 项目结构
 
@@ -158,41 +134,15 @@ my-mibbrowser/
 └── package.json
 ```
 
-## 当前限制
-
-- Agent Simulator 尚未实现。
-- 实时图表和趋势分析尚未实现。
-- SNMP over TCP、TLS/DTLS、TSM、DOCSIS DH 等不在当前 `net-snmp` 能力范围内。
-- MIB 编译器已支持依赖解析和关键元数据保留，但还不是完整商业级 SMI 诊断器。
-- Table Viewer 的 Add Row / Delete Row 仅支持带 RowStatus 语义的可创建/可删除表；复杂多阶段 createAndWait 流程仍是后续增强方向。
-
-## 常见问题
-
-### Electron 二进制下载失败
-
-重新执行 `npm install`。仍失败时，可尝试：
-
-```bash
-node node_modules/electron/install.js
-```
-
-### MIB 加载后有大量依赖 warning
-
-通常是当前目录缺少被 `IMPORTS ... FROM ...` 引用的基础 MIB。查看诊断详情，补齐缺失模块后重新加载目录。
-
-### SNMPv3 认证或加密失败
-
-检查 Security Level、Auth/Priv 协议、用户名、密码和 transport 是否与设备一致。必要时开启 Debug Mode 查看实际请求配置。
-
 ## 开发说明
 
 本项目使用 Trellis 管理任务、代码规范和工作记录，项目规范见 `.trellis/spec/`。
 
-重要开发约束：
+关键约束：
 
 - renderer 只能通过 `window.api` 调用 Electron 能力，不直接导入 `electron`。
 - main/preload/renderer 共享的 IPC 类型放在 `src/main/*/types.ts` 或 `src/shared/`。
-- MIB IPC 合约、SNMP 树操作约束和工具窗口约束已经记录在 `.trellis/spec/`，修改相关流程前先读对应 spec。
+- MIB IPC 合约、SNMP 树操作约束和工具窗口约束已记录在 `.trellis/spec/`，修改相关流程前先读对应 spec。
 
 ## License
 
