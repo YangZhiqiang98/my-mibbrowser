@@ -1440,3 +1440,36 @@ Researched mature open-source README structures, captured reference patterns, an
 ### Next Steps
 
 - None - task complete
+
+
+## Session 39: Manage MIB cache directories
+
+**Date**: 2026-05-27
+**Task**: Manage MIB cache directories
+**Branch**: `main`
+
+### Summary
+
+Implemented multi-directory MIB cache management UI and IPC: users can view, add, enable/disable, remove cache sources, and optionally delete only mib-cache-*.json files from disk.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `da673ed` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

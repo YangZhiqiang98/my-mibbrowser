@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 38
+- **Total Sessions**: 39
 - **Last Active**: 2026-05-27
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1442 | Active |
+| `journal-1.md` | ~1475 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 39 | 2026-05-27 | Manage MIB cache directories | `da673ed` | `main` |
 | 38 | 2026-05-27 | README organization research and rewrite | `8eacab5`, `b01e32d` | `main` |
 | 37 | 2026-05-27 | README current project update | `309cc5e`, `1cd9e0b` | `main` |
 | 36 | 2026-05-27 | Main-side MIB tree cache loading | `648d5ad`, `3abadd1` | `main` |
