@@ -1406,3 +1406,37 @@ Updated README to reflect current app capabilities, recent MIB tree and IPC perf
 ### Next Steps
 
 - None - task complete
+
+
+## Session 38: README organization research and rewrite
+
+**Date**: 2026-05-27
+**Task**: README organization research and rewrite
+**Branch**: `main`
+
+### Summary
+
+Researched mature open-source README structures, captured reference patterns, and reorganized README around product value, screenshots, workflows, quick start, protocol boundaries, implementation notes, and developer commands while preserving the user's simplification direction.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8eacab5` | (see git log) |
+| `b01e32d` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
