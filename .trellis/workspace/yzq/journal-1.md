@@ -1372,3 +1372,37 @@ Completed the final performance task: added a cached main-process MIB tree, retu
 ### Next Steps
 
 - None - task complete
+
+
+## Session 37: README current project update
+
+**Date**: 2026-05-27
+**Task**: README current project update
+**Branch**: `main`
+
+### Summary
+
+Updated README to reflect current app capabilities, recent MIB tree and IPC performance optimizations, development verification commands, and project development constraints.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `309cc5e` | (see git log) |
+| `1cd9e0b` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
