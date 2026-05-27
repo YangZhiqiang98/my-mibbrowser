@@ -1473,3 +1473,36 @@ Implemented multi-directory MIB cache management UI and IPC: users can view, add
 ### Next Steps
 
 - None - task complete
+
+
+## Session 40: Fix cache disable immediate refresh
+
+**Date**: 2026-05-27
+**Task**: Fix cache disable immediate refresh
+**Branch**: `main`
+
+### Summary
+
+Fixed Cache modal disable flow so disabling the only enabled cache directory clears the live MIB tree immediately, and clears stale selected/search state after cache refresh.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `10d398e` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
