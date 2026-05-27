@@ -26,6 +26,7 @@ import { useAppStore } from '../stores/appStore'
 import type { MibTreeNodeData } from '../types'
 import type { SnmpResult } from '../../../main/snmp/types'
 import { buildTreeFromNodes } from '../utils/mibTreeUtils'
+import { buildMibTreeIndex } from '../utils/mibTreeIndex'
 import { buildResultSession, initResolveContext, resolveVarbind } from '../utils/resultColumns'
 import { createStreamingResultBatcher } from '../utils/streamingResultBatcher'
 import { isTableColumnChild } from '../utils/tableSession'
@@ -80,45 +81,28 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
   const detailStartY = useRef(0)
   const detailStartHeight = useRef(0)
   const dragSequence = useRef(0)
+  const treeIndex = useMemo(() => buildMibTreeIndex(mibTree), [mibTree])
 
   // Perform MIB tree search: find matching nodes, expand ancestors, and select first match
   const performSearch = useCallback((query: string) => {
-    const lowerSearch = query.trim().toLowerCase()
-    if (!lowerSearch) {
+    const searchResult = treeIndex.search(query)
+    if (searchResult.matchIds.length === 0) {
       setSearchMatchIds([])
       setCurrentMatchIndex(0)
       return
     }
 
-    const matchIds: string[] = []
-    const ancestorIds = new Set<string>()
-
-    function collectMatches(nodes: MibTreeNodeData[], ancestors: string[]) {
-      for (const node of nodes) {
-        const isMatch = node.name.toLowerCase().includes(lowerSearch) ||
-          node.oid.toLowerCase().includes(lowerSearch)
-        if (isMatch) {
-          matchIds.push(node.id)
-          for (const a of ancestors) ancestorIds.add(a)
-        }
-        collectMatches(node.children, [...ancestors, node.id])
-      }
-    }
-    collectMatches(mibTree, [])
-
-    setSearchMatchIds(matchIds)
+    setSearchMatchIds(searchResult.matchIds)
     setCurrentMatchIndex(0)
 
     // Expand ancestors of all matches and auto-select the first match
-    if (matchIds.length > 0) {
-      setExpandedKeys(prev => [...new Set([...prev, ...ancestorIds])])
-      const firstMatch = findNodeById(mibTree, matchIds[0])
-      if (firstMatch) {
-        setSelectedNode(firstMatch)
-        setQueryOid(firstMatch.oid)
-      }
+    setExpandedKeys(prev => [...new Set([...prev, ...searchResult.ancestorIds])])
+    const firstMatch = treeIndex.nodeById.get(searchResult.matchIds[0])
+    if (firstMatch) {
+      setSelectedNode(firstMatch)
+      setQueryOid(firstMatch.oid)
     }
-  }, [mibTree, setSelectedNode, setQueryOid])
+  }, [treeIndex, setSelectedNode, setQueryOid])
 
   // Scroll to current match when cycling through results
   useEffect(() => {
@@ -127,7 +111,7 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
     if (!matchId) return
 
     // Expand ancestors of the current match
-    const ancestors = findAncestorIds(mibTree, matchId)
+    const ancestors = treeIndex.getAncestorIds(matchId)
     if (ancestors.length > 0) {
       setExpandedKeys(prev => [...new Set([...prev, ...ancestors])])
     }
@@ -150,7 +134,7 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
       }
     }, 150)
     return () => clearTimeout(timerId)
-  }, [currentMatchIndex, searchMatchIds, mibTree])
+  }, [currentMatchIndex, searchMatchIds, treeIndex])
 
   // Vertical resize handle for node detail panel
   useEffect(() => {
@@ -201,27 +185,14 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
     return mibTree.map((node) => convertToDataNode(node, searchMatchSet))
   }, [mibTree, searchMatchSet])
 
-  // Collect all valid node IDs from the current tree for validation
-  const validNodeIds = useMemo(() => {
-    const ids = new Set<string>()
-    function collect(nodes: MibTreeNodeData[]) {
-      for (const node of nodes) {
-        ids.add(node.id)
-        collect(node.children)
-      }
-    }
-    collect(mibTree)
-    return ids
-  }, [mibTree])
-
   // Clean up stale expandedKeys when tree data changes
   useEffect(() => {
     setExpandedKeys(prev => {
-      const valid = prev.filter(k => validNodeIds.has(k))
+      const valid = prev.filter(k => treeIndex.validNodeIds.has(k))
       if (valid.length === prev.length) return prev // No change
       return valid
     })
-  }, [validNodeIds])
+  }, [treeIndex])
 
   const showMibParseDiagnostics = useCallback((result: MibParseResult): void => {
     const diagnostics = buildMibDiagnostics(result)
@@ -313,29 +284,21 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
       return
     }
     const nodeId = selectedKeys[0] as string
-    const node = findNodeById(mibTree, nodeId)
+    const node = treeIndex.nodeById.get(nodeId)
     if (node) {
       setSelectedNode(node)
       setQueryOid(node.oid)
     }
-  }, [mibTree])
+  }, [treeIndex])
 
   const [contextMenuNode, setContextMenuNode] = useState<MibTreeNodeData | null>(null)
 
-  const collectSubtreeKeys = useCallback((node: MibTreeNodeData): string[] => {
-    const keys = [node.id]
-    for (const child of node.children) {
-      keys.push(...collectSubtreeKeys(child))
-    }
-    return keys
-  }, [])
-
   const handleRightClick = useCallback(({ node }: { node: EventDataNode<DataNode> }) => {
-    const found = findNodeById(mibTree, node.key as string)
+    const found = treeIndex.nodeById.get(node.key as string)
     if (found) {
       setContextMenuNode(found)
     }
-  }, [mibTree])
+  }, [treeIndex])
 
   const executeSnmpOperation = useCallback(async (
     operation: 'GETBULK' | 'WALK' | 'BULK_WALK',
@@ -622,7 +585,7 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
         icon: <ExpandOutlined />,
         label: 'Expand All',
         onClick: () => {
-          const allKeys = collectSubtreeKeys(contextMenuNode)
+          const allKeys = treeIndex.getSubtreeKeys(contextMenuNode.id)
           setExpandedKeys((prev) => [...new Set([...prev, ...allKeys])])
         }
       },
@@ -631,25 +594,25 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
         icon: <CompressOutlined />,
         label: 'Collapse All',
         onClick: () => {
-          const subtreeKeys = new Set(collectSubtreeKeys(contextMenuNode))
+          const subtreeKeys = new Set(treeIndex.getSubtreeKeys(contextMenuNode.id))
           setExpandedKeys((prev) => prev.filter((k) => !subtreeKeys.has(k)))
         }
       }
     ]
-  }, [contextMenuNode, collectSubtreeKeys, setQueryOid, setSelectedNode, executeSnmpOperation, openGetDialog, openSetDialog, openTableViewer])
+  }, [contextMenuNode, treeIndex, setQueryOid, setSelectedNode, executeSnmpOperation, openGetDialog, openSetDialog, openTableViewer])
 
   // Drag a tree node into a GET / SET tool window drop zone. AntD Tree's
   // wrapped drag event is not reliable enough as the sole data channel across
   // BrowserWindows, so the selected node is also published through main-process
   // IPC and consumed by the receiving tool window on drop.
   const handleTreeDragStart: NonNullable<TreeProps['onDragStart']> = useCallback((info) => {
-    const node = findNodeById(mibTree, info.node.key as string)
+    const node = treeIndex.nodeById.get(info.node.key as string)
     if (node) {
       dragSequence.current += 1
       info.event.dataTransfer?.setData('text/plain', node.id)
       window.api.snmpTool.setDragNode(node).catch(() => {})
     }
-  }, [mibTree])
+  }, [treeIndex])
 
   const handleTreeDragEnd: NonNullable<TreeProps['onDragEnd']> = useCallback(() => {
     const finishedSequence = dragSequence.current
@@ -973,30 +936,6 @@ function getNodeIcon(kind: string): React.ReactNode {
     case 'module': return <FolderOpenOutlined />
     default: return <FileOutlined />
   }
-}
-
-/**
- * Find ancestor IDs of a node by its ID, used to expand tree to reveal a match
- */
-function findAncestorIds(nodes: MibTreeNodeData[], targetId: string, ancestors: string[] = []): string[] {
-  for (const node of nodes) {
-    if (node.id === targetId) return ancestors
-    const found = findAncestorIds(node.children, targetId, [...ancestors, node.id])
-    if (found.length > 0) return found
-  }
-  return []
-}
-
-/**
- * Find a node by ID in the tree
- */
-function findNodeById(nodes: MibTreeNodeData[], id: string): MibTreeNodeData | null {
-  for (const node of nodes) {
-    if (node.id === id) return node
-    const found = findNodeById(node.children, id)
-    if (found) return found
-  }
-  return null
 }
 
 /**
