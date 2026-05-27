@@ -1167,3 +1167,34 @@ Reviewed and cleaned codebase: removed dead ResizableHeaderCell, fixed QueryPane
 ### Next Steps
 
 - None - task complete
+
+
+## Session 31: Package Windows app
+
+**Date**: 2026-05-26
+**Task**: Package Windows app
+**Branch**: `main`
+
+### Summary
+
+Built the Electron app and packaged the Windows x64 NSIS installer at dist/MIB Browser Setup 1.0.0.exe; verified typecheck, lint, tests, and build.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
