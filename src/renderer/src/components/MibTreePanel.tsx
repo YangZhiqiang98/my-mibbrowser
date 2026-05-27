@@ -27,6 +27,7 @@ import type { MibTreeNodeData } from '../types'
 import type { SnmpResult } from '../../../main/snmp/types'
 import { buildTreeFromNodes } from '../utils/mibTreeUtils'
 import { buildMibTreeIndex } from '../utils/mibTreeIndex'
+import { createMibTreeDataNodeBuilder } from '../utils/mibTreeDataNodes'
 import { buildResultSession, initResolveContext, resolveVarbind } from '../utils/resultColumns'
 import { createStreamingResultBatcher } from '../utils/streamingResultBatcher'
 import { isTableColumnChild } from '../utils/tableSession'
@@ -81,6 +82,7 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
   const detailStartY = useRef(0)
   const detailStartHeight = useRef(0)
   const dragSequence = useRef(0)
+  const dataNodeBuilder = useMemo(() => createMibTreeDataNodeBuilder(), [])
   const treeIndex = useMemo(() => buildMibTreeIndex(mibTree), [mibTree])
 
   // Perform MIB tree search: find matching nodes, expand ancestors, and select first match
@@ -179,11 +181,19 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
     }
   }, [searchText, searchMatchIds.length, performSearch])
 
-  // Always convert the full mibTree to DataNode format (no filtering)
+  const handleNodeTitleDoubleClick = useCallback((oid: string): void => {
+    setQueryOid(oid)
+  }, [setQueryOid])
+
+  // Always display the full mibTree, reusing DataNode objects for unchanged branches.
   const searchMatchSet = useMemo(() => new Set(searchMatchIds), [searchMatchIds])
   const filteredTreeData = useMemo(() => {
-    return mibTree.map((node) => convertToDataNode(node, searchMatchSet))
-  }, [mibTree, searchMatchSet])
+    return dataNodeBuilder.build(mibTree, {
+      searchMatchIds: searchMatchSet,
+      getNodeIcon,
+      onNodeDoubleClick: handleNodeTitleDoubleClick
+    })
+  }, [dataNodeBuilder, mibTree, searchMatchSet, handleNodeTitleDoubleClick])
 
   // Clean up stale expandedKeys when tree data changes
   useEffect(() => {
@@ -894,31 +904,6 @@ function DiagnosticSection({
       </ul>
     </section>
   )
-}
-
-/**
- * Convert MibTreeNodeData to antd DataNode
- */
-function convertToDataNode(node: MibTreeNodeData, searchMatchSet: Set<string>): DataNode {
-  const icon = getNodeIcon(node.kind)
-  const isMatch = searchMatchSet.has(node.id)
-
-  return {
-    key: node.id,
-    title: (
-      <span
-        className="mib-node-title"
-        data-node-id={node.id}
-        onDoubleClick={() => useAppStore.getState().setQueryOid(node.oid)}
-        style={isMatch ? { background: '#fff3cd', padding: '0 2px', borderRadius: 2 } : undefined}
-      >
-        {node.name}
-      </span>
-    ),
-    icon: <span className={`mib-node-icon mib-node-${node.kind}`}>{icon}</span>,
-    children: node.children.map((child) => convertToDataNode(child, searchMatchSet)),
-    isLeaf: node.children.length === 0
-  }
 }
 
 /**
