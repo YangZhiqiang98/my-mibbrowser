@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 31
+- **Total Sessions**: 32
 - **Last Active**: 2026-05-27
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1200 | Active |
+| `journal-1.md` | ~1235 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 32 | 2026-05-27 | Performance optimization pass | `26439cb`, `53ec02a`, `7fcf1c8` | `main` |
 | 31 | 2026-05-26 | Package Windows app | - | `main` |
 | 30 | 2026-05-27 | Code review cleanup | `d2dce64` | `main` |
 | 29 | 2026-05-26 | Add Trap and Inform console | `9220f9f` | `main` |
