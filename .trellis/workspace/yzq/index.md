@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 35
+- **Total Sessions**: 36
 - **Last Active**: 2026-05-27
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1340 | Active |
+| `journal-1.md` | ~1374 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 36 | 2026-05-27 | Main-side MIB tree cache loading | `648d5ad`, `3abadd1` | `main` |
 | 35 | 2026-05-27 | Tool window context slimming | `8068eb2`, `1fba322`, `e2d278a` | `main` |
 | 34 | 2026-05-27 | Tree DataNode caching | `6236f05`, `99e7d87`, `235d272` | `main` |
 | 33 | 2026-05-27 | MIB tree panel indexing | `c4d00ca`, `61f1464`, `0f52a72` | `main` |

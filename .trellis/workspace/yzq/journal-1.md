@@ -1338,3 +1338,37 @@ Removed full MIB tree snapshots from tool-window open/context payloads, added sl
 ### Next Steps
 
 - None - task complete
+
+
+## Session 36: Main-side MIB tree cache loading
+
+**Date**: 2026-05-27
+**Task**: Main-side MIB tree cache loading
+**Branch**: `main`
+
+### Summary
+
+Completed the final performance task: added a cached main-process MIB tree, returned tree snapshots from MIB load responses, updated renderer load paths to avoid immediate mib:get-tree pulls, documented the MIB IPC contract, and verified typecheck/lint/tests/build.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `648d5ad` | (see git log) |
+| `3abadd1` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
