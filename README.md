@@ -113,7 +113,15 @@ npm run package:win
 npm run package:mac
 ```
 
-两个脚本默认使用国内镜像源下载 Electron 和 electron-builder 辅助包，并关闭证书自动发现；脚本会先清理旧的 `out/` 和 `dist/`，再执行类型检查、lint、测试和构建。Windows 打包脚本为 `scripts/package-win.ps1`，使用 `electron-builder --win --x64 --publish never` 生成 NSIS 安装包；当前 Windows 配置关闭了 exe 签名/资源编辑，避免普通 Windows 用户因为 `winCodeSign` 工具包解压符号链接权限不足而打包失败。macOS 打包脚本为 `scripts/package-mac.sh`，使用 `electron-builder --mac --x64 --arm64 --publish never` 生成 DMG；项目配置支持 macOS 打包，但建议在 macOS 环境执行，后续如需正式分发还需要配置 Apple 签名和 notarization。项目不支持 iOS 打包，当前是 Electron 桌面应用。
+两个脚本默认使用国内镜像源下载 Electron 和 electron-builder 辅助包，并关闭证书自动发现；脚本会先清理旧的 `out/` 和 `dist/`，再执行类型检查、lint、测试和构建。
+
+Windows 打包脚本为 `scripts/package-win.ps1`，使用 `electron-builder --win --x64 --publish never` 生成 NSIS 安装包；
+
+当前 Windows 配置关闭了 exe 签名/资源编辑，避免普通 Windows 用户因为 `winCodeSign` 工具包解压符号链接权限不足而打包失败。
+
+macOS 打包脚本为 `scripts/package-mac.sh`，使用 `electron-builder --mac --x64 --arm64 --publish never` 生成 DMG；
+
+项目配置支持 macOS 打包，但建议在 macOS 环境执行，后续如需正式分发还需要配置 Apple 签名和 notarization。
 
 默认镜像源为：
 
