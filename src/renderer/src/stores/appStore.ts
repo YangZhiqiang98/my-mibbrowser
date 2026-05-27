@@ -46,6 +46,7 @@ interface AppState {
   // Actions
   setMibTree: (tree: MibTreeNodeData[]) => void
   setSelectedMibNode: (node: MibTreeNodeData | null) => void
+  setLoadedModules: (names: string[]) => void
   addLoadedModule: (name: string) => void
 
   setSnmpConfig: (config: Partial<SnmpConfig>) => void
@@ -143,6 +144,8 @@ export const useAppStore = create<AppState>((set) => ({
   // MIB actions
   setMibTree: (tree) => set({ mibTree: tree }),
   setSelectedMibNode: (node) => set({ selectedMibNode: node }),
+  setLoadedModules: (names) =>
+    set({ loadedModules: [...new Set(names)] }),
   addLoadedModule: (name) =>
     set((state) => ({
       loadedModules: state.loadedModules.includes(name)

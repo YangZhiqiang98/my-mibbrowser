@@ -109,3 +109,123 @@ writeFileSync('settings.json', JSON.stringify(settings))
 ```typescript
 writeFileSync(join(app.getPath('userData'), 'app-settings.json'), JSON.stringify(settings, null, 2), 'utf-8')
 ```
+
+---
+
+## Scenario: Cache Directory Sources IPC Contract
+
+### 1. Scope / Trigger
+
+- Trigger: MIB cache source management from the renderer.
+- Applies when changing cache directory persistence, startup cache hydration, or renderer cache-directory settings UI.
+- The cache-directory settings file is separate from `app-settings.json` for backward compatibility with the original cache implementation.
+
+### 2. Signatures
+
+IPC channels:
+
+```typescript
+mib:list-cache-dirs -> CacheDirectorySource[]
+mib:add-cache-dir -> CacheDirectoryOperationResult | null
+mib:set-cache-dir-enabled(id: string, enabled: boolean) -> CacheDirectoryOperationResult
+mib:remove-cache-dir(id: string, options?: RemoveCacheDirectoryOptions) -> CacheDirectoryOperationResult
+```
+
+Preload API:
+
+```typescript
+window.api.mib.listCacheDirs(): Promise<CacheDirectorySource[]>
+window.api.mib.addCacheDir(): Promise<CacheDirectoryOperationResult | null>
+window.api.mib.setCacheDirEnabled(id: string, enabled: boolean): Promise<CacheDirectoryOperationResult>
+window.api.mib.removeCacheDir(id: string, options?: RemoveCacheDirectoryOptions): Promise<CacheDirectoryOperationResult>
+```
+
+Stored file:
+
+```typescript
+interface CacheDirConfig {
+  /** Legacy single-directory shape; still readable. */
+  cacheDir?: string
+  /** Current multi-directory shape. */
+  cacheDirs?: Array<{ path: string; enabled: boolean }>
+}
+```
+
+Shared response types live in `src/shared/cacheDirectoryTypes.ts`.
+
+### 3. Contracts
+
+- Store cache directory configuration in `cache-dir-config.json` under `app.getPath('userData')`.
+- Preserve compatibility with legacy `{ cacheDir: string }` by normalizing it to one enabled cache source.
+- Missing config falls back to one enabled default source at `app.getPath('userData')`.
+- `cacheDirs` entries are deduplicated by normalized path.
+- Newly added directories are enabled and moved to the end of the list.
+- The last enabled directory is the primary cache write target for newly parsed MIB cache files.
+- Startup and cache refresh load `mib-cache-*.json` from all enabled directories.
+- Disabling/removing a cache source must remove modules restored from cache sources and rebuild from the remaining enabled cache directories.
+- Removing with `deleteFromDisk: true` deletes only `mib-cache-*.json` files in that directory; it must not recursively delete the directory or unrelated user files.
+- Per-MIB/module selection inside cache files is not part of this contract.
+
+### 4. Validation & Error Matrix
+
+| Condition | Required behavior |
+|---|---|
+| Folder picker cancelled | `mib:add-cache-dir` returns `null` |
+| Config file missing | Return default userData source as enabled |
+| Config file corrupt | Ignore it and use default userData source |
+| Legacy `cacheDir` exists | Return it as one enabled cache source |
+| Duplicate directory added | Keep one entry and move the added directory to primary position |
+| Directory disabled | Rebuild cache-loaded modules without that directory |
+| Directory removed | Remove it from config and rebuild cache-loaded modules |
+| `deleteFromDisk` is false or absent | Remove from config only; do not delete files |
+| `deleteFromDisk` is true | Delete only `mib-cache-*.json` files after renderer confirmation |
+| Target is default userData | Return an error instead of deleting cache files through this action |
+| Settings write fails | Return a result with `error`; do not throw across IPC |
+
+### 5. Good/Base/Bad Cases
+
+- Good: Add a cache directory, it becomes enabled and primary, existing cache files load immediately, and the renderer refreshes `mib:get-tree`.
+- Good: Disable a cache directory and the tree refresh removes modules restored only from that cache source.
+- Base: User removes a cache directory from the list but leaves files on disk.
+- Base: User chooses disk deletion; only `mib-cache-*.json` files are removed.
+- Bad: Recursively deleting the selected folder, because a cache directory can be a user-managed folder containing unrelated files.
+- Bad: Showing per-MIB selectors in this modal; directory-level enable/disable is the supported granularity.
+
+### 6. Tests Required
+
+- Unit tests for legacy `{ cacheDir }` normalization.
+- Unit tests for `cacheDirs` dedupe and primary-source selection.
+- Typecheck must cover the main/preload/renderer IPC shape.
+- Lint must pass with no direct Electron imports in renderer.
+- When handler tests are added, cover add/enable/disable/remove and cache-file deletion error cases.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```typescript
+rmSync(cacheDir, { recursive: true, force: true })
+```
+
+#### Correct
+
+```typescript
+for (const file of readdirSync(cacheDir).filter((name) => name.startsWith('mib-cache-'))) {
+  unlinkSync(join(cacheDir, file))
+}
+```
+
+#### Wrong
+
+```typescript
+const cacheDir = config.cacheDir
+loadOnlyThisDirectory(cacheDir)
+```
+
+#### Correct
+
+```typescript
+for (const source of cacheDirs.filter((source) => source.enabled)) {
+  loadCacheDirectory(source.path)
+}
+```

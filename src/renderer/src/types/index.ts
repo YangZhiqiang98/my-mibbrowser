@@ -18,6 +18,11 @@ import type {
 } from '../../../shared/toolWindowTypes'
 import type { DebugLogEntry } from '../../../shared/debugLogTypes'
 import type { TrapNotificationEvent, TrapReceiverConfig, TrapReceiverStatus } from '../../../shared/trapTypes'
+import type {
+  CacheDirectoryOperationResult,
+  CacheDirectorySource,
+  RemoveCacheDirectoryOptions
+} from '../../../shared/cacheDirectoryTypes'
 
 declare global {
   interface Window {
@@ -30,6 +35,13 @@ declare global {
         loadContent: (contents: Array<{ name: string; content: string }>) => Promise<MibParseResult>
         selectCacheDir: () => Promise<string | null>
         getCacheDir: () => Promise<string>
+        listCacheDirs: () => Promise<CacheDirectorySource[]>
+        addCacheDir: () => Promise<CacheDirectoryOperationResult | null>
+        setCacheDirEnabled: (id: string, enabled: boolean) => Promise<CacheDirectoryOperationResult>
+        removeCacheDir: (
+          id: string,
+          options?: RemoveCacheDirectoryOptions
+        ) => Promise<CacheDirectoryOperationResult>
       }
       snmp: {
         get: (config: SnmpConfig, oids: string[]) => Promise<SnmpResult>

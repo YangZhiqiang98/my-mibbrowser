@@ -11,6 +11,11 @@ import type {
 } from '../shared/toolWindowTypes'
 import type { DebugLogEntry } from '../shared/debugLogTypes'
 import type { TrapNotificationEvent, TrapReceiverConfig, TrapReceiverStatus } from '../shared/trapTypes'
+import type {
+  CacheDirectoryOperationResult,
+  CacheDirectorySource,
+  RemoveCacheDirectoryOptions
+} from '../shared/cacheDirectoryTypes'
 
 /**
  * API exposed to the renderer process via contextBridge
@@ -25,7 +30,16 @@ const api = {
     loadContent: (contents: Array<{ name: string; content: string }>): Promise<MibParseResult> =>
       ipcRenderer.invoke('mib:load-content', contents),
     selectCacheDir: (): Promise<string | null> => ipcRenderer.invoke('mib:select-cache-dir'),
-    getCacheDir: (): Promise<string> => ipcRenderer.invoke('mib:get-cache-dir')
+    getCacheDir: (): Promise<string> => ipcRenderer.invoke('mib:get-cache-dir'),
+    listCacheDirs: (): Promise<CacheDirectorySource[]> => ipcRenderer.invoke('mib:list-cache-dirs'),
+    addCacheDir: (): Promise<CacheDirectoryOperationResult | null> => ipcRenderer.invoke('mib:add-cache-dir'),
+    setCacheDirEnabled: (id: string, enabled: boolean): Promise<CacheDirectoryOperationResult> =>
+      ipcRenderer.invoke('mib:set-cache-dir-enabled', id, enabled),
+    removeCacheDir: (
+      id: string,
+      options?: RemoveCacheDirectoryOptions
+    ): Promise<CacheDirectoryOperationResult> =>
+      ipcRenderer.invoke('mib:remove-cache-dir', id, options)
   },
 
   // SNMP operations

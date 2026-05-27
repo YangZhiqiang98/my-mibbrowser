@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react'
-import { Input, Button, Tooltip, message, Tree, Dropdown, Tag, App, Modal } from 'antd'
+import { Input, Button, Tooltip, message, Tree, Dropdown, Tag, App, Modal, Switch, Empty } from 'antd'
 import type { MenuProps, TreeProps } from 'antd'
 import {
   SearchOutlined,
@@ -19,7 +19,9 @@ import {
   ReloadOutlined,
   DatabaseOutlined,
   EditOutlined,
-  ProfileOutlined
+  ProfileOutlined,
+  DeleteOutlined,
+  PlusOutlined
 } from '@ant-design/icons'
 import type { DataNode, EventDataNode } from 'antd/es/tree'
 import { useAppStore } from '../stores/appStore'
@@ -33,6 +35,7 @@ import { buildResultSession, initResolveContext, resolveVarbind } from '../utils
 import { createStreamingResultBatcher } from '../utils/streamingResultBatcher'
 import { isTableColumnChild } from '../utils/tableSession'
 import type { MibNode, MibParseResult } from '../../../main/mib/types'
+import type { CacheDirectoryOperationResult, CacheDirectorySource } from '../../../shared/cacheDirectoryTypes'
 
 const ACCESS_COLOR_MAP: Record<string, string> = {
   'read-only': 'blue',
@@ -55,12 +58,13 @@ interface MibDiagnosticsState {
 export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
   // Tool-window launch errors use the App-bound message API. The legacy
   // static `message` import is still used by parse / load paths in this panel.
-  const { message: appMessage, notification } = App.useApp()
+  const { message: appMessage, modal, notification } = App.useApp()
   const mibTree = useAppStore((s) => s.mibTree)
   const setMibTree = useAppStore((s) => s.setMibTree)
   const selectedNode = useAppStore((s) => s.selectedMibNode)
   const setSelectedNode = useAppStore((s) => s.setSelectedMibNode)
   const setQueryOid = useAppStore((s) => s.setQueryOid)
+  const setLoadedModules = useAppStore((s) => s.setLoadedModules)
   const addLoadedModule = useAppStore((s) => s.addLoadedModule)
   const setStatusMessage = useAppStore((s) => s.setStatusMessage)
   const snmpConfig = useAppStore((s) => s.snmpConfig)
@@ -78,6 +82,10 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
   const [detailHeight, setDetailHeight] = useState(180)
   const [mibDiagnostics, setMibDiagnostics] = useState<MibDiagnosticsState | null>(null)
   const [isDiagnosticsModalOpen, setIsDiagnosticsModalOpen] = useState(false)
+  const [isCacheModalOpen, setIsCacheModalOpen] = useState(false)
+  const [cacheDirectories, setCacheDirectories] = useState<CacheDirectorySource[]>([])
+  const [isCacheDirectoriesLoading, setIsCacheDirectoriesLoading] = useState(false)
+  const [cacheDirectoryBusyId, setCacheDirectoryBusyId] = useState<string | null>(null)
   const treeRef = useRef<{ scrollTo: (info: { key: string }) => void } | null>(null)
   const isDetailDragging = useRef(false)
   const detailStartY = useRef(0)
@@ -241,6 +249,132 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
     })
   }, [notification])
 
+  const syncTreeFromBackend = useCallback(async (): Promise<number> => {
+    const nodes = await window.api.mib.getTree()
+    const tree = buildTreeFromNodes(nodes)
+    setMibTree(tree)
+
+    const moduleNames = getUniqueModuleNames(nodes)
+    setLoadedModules(moduleNames)
+    return moduleNames.length
+  }, [setLoadedModules, setMibTree])
+
+  const loadCacheDirectories = useCallback(async (): Promise<void> => {
+    setIsCacheDirectoriesLoading(true)
+    try {
+      const directories = await window.api.mib.listCacheDirs()
+      setCacheDirectories(directories)
+    } catch (error) {
+      const errMsg = error instanceof Error ? error.message : String(error)
+      appMessage.error(`Failed to load cache directories: ${errMsg}`)
+    } finally {
+      setIsCacheDirectoriesLoading(false)
+    }
+  }, [appMessage])
+
+  const openCacheDirectoryModal = useCallback((): void => {
+    setIsCacheModalOpen(true)
+    void loadCacheDirectories()
+  }, [loadCacheDirectories])
+
+  const applyCacheDirectoryResult = useCallback(async (
+    result: CacheDirectoryOperationResult | null,
+    successMessage: string
+  ): Promise<void> => {
+    if (!result) return
+    setCacheDirectories(result.directories)
+    if (result.error) {
+      appMessage.error(result.error)
+      return
+    }
+
+    const moduleCount = await syncTreeFromBackend()
+    appMessage.success(successMessage)
+    setStatusMessage(`Loaded ${moduleCount} cached module(s) from enabled cache directories`)
+  }, [appMessage, setStatusMessage, syncTreeFromBackend])
+
+  const handleAddCacheDir = useCallback(async (): Promise<void> => {
+    setIsCacheDirectoriesLoading(true)
+    try {
+      const result = await window.api.mib.addCacheDir()
+      await applyCacheDirectoryResult(result, 'Cache directory added and loaded')
+    } catch (error) {
+      const errMsg = error instanceof Error ? error.message : String(error)
+      appMessage.error(`Failed to add cache directory: ${errMsg}`)
+    } finally {
+      setIsCacheDirectoriesLoading(false)
+    }
+  }, [appMessage, applyCacheDirectoryResult])
+
+  const handleCacheDirectoryEnabledChange = useCallback(async (
+    source: CacheDirectorySource,
+    enabled: boolean
+  ): Promise<void> => {
+    setCacheDirectoryBusyId(source.id)
+    try {
+      const result = await window.api.mib.setCacheDirEnabled(source.id, enabled)
+      await applyCacheDirectoryResult(
+        result,
+        enabled ? 'Cache directory enabled and loaded' : 'Cache directory disabled'
+      )
+    } catch (error) {
+      const errMsg = error instanceof Error ? error.message : String(error)
+      appMessage.error(`Failed to update cache directory: ${errMsg}`)
+    } finally {
+      setCacheDirectoryBusyId(null)
+    }
+  }, [appMessage, applyCacheDirectoryResult])
+
+  const removeCacheDirectory = useCallback(async (
+    source: CacheDirectorySource,
+    deleteFromDisk: boolean
+  ): Promise<void> => {
+    setCacheDirectoryBusyId(source.id)
+    try {
+      const result = await window.api.mib.removeCacheDir(source.id, { deleteFromDisk })
+      const messageText = deleteFromDisk
+        ? `Cache directory removed; deleted ${result.deletedFileCount ?? 0} cache file(s)`
+        : 'Cache directory removed from list'
+      await applyCacheDirectoryResult(result, messageText)
+    } catch (error) {
+      const errMsg = error instanceof Error ? error.message : String(error)
+      appMessage.error(`Failed to remove cache directory: ${errMsg}`)
+    } finally {
+      setCacheDirectoryBusyId(null)
+    }
+  }, [appMessage, applyCacheDirectoryResult])
+
+  const confirmRemoveCacheDirectory = useCallback((source: CacheDirectorySource): void => {
+    modal.confirm({
+      title: 'Remove cache directory?',
+      content: (
+        <div className="cache-directory-confirm">
+          <p>Remove this directory from the cache source list?</p>
+          <code>{source.path}</code>
+        </div>
+      ),
+      okText: 'Remove from list',
+      cancelText: 'Cancel',
+      onOk: () => removeCacheDirectory(source, false)
+    })
+  }, [modal, removeCacheDirectory])
+
+  const confirmDeleteCacheDirectoryFromDisk = useCallback((source: CacheDirectorySource): void => {
+    modal.confirm({
+      title: 'Delete cache files from disk?',
+      content: (
+        <div className="cache-directory-confirm">
+          <p>This removes the source from the list and deletes its cache files from disk.</p>
+          <code>{source.path}</code>
+        </div>
+      ),
+      okText: 'Delete from disk',
+      okButtonProps: { danger: true },
+      cancelText: 'Cancel',
+      onOk: () => removeCacheDirectory(source, true)
+    })
+  }, [modal, removeCacheDirectory])
+
   const handleOpenFiles = useCallback(async () => {
     setStatusMessage('Loading MIB files...')
     const result = await window.api.mib.openFiles()
@@ -274,18 +408,6 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
       setStatusMessage(`Loaded ${result.modules.length} module(s)`)
     } else if (result.errors.length === 0) {
       setStatusMessage('Ready')
-    }
-  }, [])
-
-  const handleSelectCacheDir = useCallback(async () => {
-    const cacheDir = await window.api.mib.selectCacheDir()
-    if (cacheDir) {
-      // Refresh tree from newly loaded cache files
-      const nodes = await window.api.mib.getTree()
-      const tree = buildTreeFromNodes(nodes)
-      setMibTree(tree)
-      message.success(`Cache directory set: ${cacheDir}`)
-      setStatusMessage(`Cache directory: ${cacheDir}`)
     }
   }, [])
 
@@ -730,11 +852,11 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
               Directory
             </Button>
           </Tooltip>
-          <Tooltip title="Select Cache Directory">
+          <Tooltip title="Manage Cache Directories">
             <Button
               icon={<DatabaseOutlined />}
               size="small"
-              onClick={handleSelectCacheDir}
+              onClick={openCacheDirectoryModal}
             >
               Cache
             </Button>
@@ -841,6 +963,28 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
       )}
 
       <Modal
+        title="Cache Directories"
+        open={isCacheModalOpen}
+        onCancel={() => setIsCacheModalOpen(false)}
+        footer={[
+          <Button key="close" onClick={() => setIsCacheModalOpen(false)}>
+            Close
+          </Button>
+        ]}
+        width={760}
+      >
+        <CacheDirectoriesModalContent
+          directories={cacheDirectories}
+          busyId={cacheDirectoryBusyId}
+          loading={isCacheDirectoriesLoading}
+          onAdd={handleAddCacheDir}
+          onDeleteFromDisk={confirmDeleteCacheDirectoryFromDisk}
+          onEnabledChange={handleCacheDirectoryEnabledChange}
+          onRemove={confirmRemoveCacheDirectory}
+        />
+      </Modal>
+
+      <Modal
         title="MIB diagnostics"
         open={isDiagnosticsModalOpen}
         onCancel={() => setIsDiagnosticsModalOpen(false)}
@@ -873,6 +1017,132 @@ function getLoadedMibTreeNodes(result: MibParseResult): Promise<MibNode[]> | Mib
 function truncateText(value: string, maxLength: number): string {
   if (value.length <= maxLength) return value
   return `${value.slice(0, maxLength - 1)}…`
+}
+
+function getUniqueModuleNames(nodes: MibNode[]): string[] {
+  return [...new Set(nodes.map((node) => node.module).filter(Boolean))]
+}
+
+function CacheDirectoriesModalContent({
+  directories,
+  busyId,
+  loading,
+  onAdd,
+  onDeleteFromDisk,
+  onEnabledChange,
+  onRemove
+}: {
+  directories: CacheDirectorySource[]
+  busyId: string | null
+  loading: boolean
+  onAdd: () => void
+  onDeleteFromDisk: (source: CacheDirectorySource) => void
+  onEnabledChange: (source: CacheDirectorySource, enabled: boolean) => void
+  onRemove: (source: CacheDirectorySource) => void
+}): React.ReactElement {
+  const enabledCount = directories.filter((source) => source.enabled).length
+
+  return (
+    <div className="cache-directories-modal">
+      <div className="cache-directories-toolbar">
+        <div className="cache-directories-summary">
+          {enabledCount} / {directories.length} enabled
+        </div>
+        <Button
+          icon={<PlusOutlined />}
+          loading={loading}
+          onClick={onAdd}
+          size="small"
+        >
+          Add Directory
+        </Button>
+      </div>
+
+      {directories.length === 0 ? (
+        <Empty
+          description="No cache directories configured"
+          image={Empty.PRESENTED_IMAGE_SIMPLE}
+        >
+          <Button icon={<PlusOutlined />} onClick={onAdd} size="small">
+            Add Directory
+          </Button>
+        </Empty>
+      ) : (
+        <div className="cache-directory-list">
+          {directories.map((source) => (
+            <CacheDirectoryRow
+              key={source.id}
+              busy={busyId === source.id}
+              source={source}
+              onDeleteFromDisk={onDeleteFromDisk}
+              onEnabledChange={onEnabledChange}
+              onRemove={onRemove}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function CacheDirectoryRow({
+  busy,
+  source,
+  onDeleteFromDisk,
+  onEnabledChange,
+  onRemove
+}: {
+  busy: boolean
+  source: CacheDirectorySource
+  onDeleteFromDisk: (source: CacheDirectorySource) => void
+  onEnabledChange: (source: CacheDirectorySource, enabled: boolean) => void
+  onRemove: (source: CacheDirectorySource) => void
+}): React.ReactElement {
+  return (
+    <div className={`cache-directory-row ${source.enabled ? 'is-enabled' : 'is-disabled'}`}>
+      <div className="cache-directory-main">
+        <div className="cache-directory-path-line">
+          <code className="cache-directory-path">{source.path}</code>
+          <div className="cache-directory-tags">
+            {source.isPrimary && <Tag color="blue">Primary</Tag>}
+            {source.isDefault && <Tag>Default</Tag>}
+            {!source.exists && <Tag color="red">Missing</Tag>}
+          </div>
+        </div>
+        <div className="cache-directory-meta">
+          {source.enabled ? 'Loaded on startup and cache refresh' : 'Disabled; not loaded'}
+        </div>
+      </div>
+      <div className="cache-directory-actions">
+        <Switch
+          checked={source.enabled}
+          disabled={busy}
+          loading={busy}
+          size="small"
+          onChange={(enabled) => onEnabledChange(source, enabled)}
+        />
+        <Tooltip title="Remove from list">
+          <Button
+            aria-label="Remove cache directory from list"
+            icon={<DeleteOutlined />}
+            loading={busy}
+            onClick={() => onRemove(source)}
+            size="small"
+          />
+        </Tooltip>
+        <Tooltip title="Remove and delete files from disk">
+          <Button
+            aria-label="Remove cache directory and delete cache files"
+            danger
+            icon={<DeleteOutlined />}
+            loading={busy}
+            onClick={() => onDeleteFromDisk(source)}
+            size="small"
+          />
+        </Tooltip>
+      </div>
+    </div>
+  )
 }
 
 function MibDiagnosticsDetails({ diagnostics }: { diagnostics: MibDiagnosticsState }): React.ReactElement {
