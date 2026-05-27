@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 40
+- **Total Sessions**: 41
 - **Last Active**: 2026-05-27
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1508 | Active |
+| `journal-1.md` | ~1541 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 41 | 2026-05-27 | Add fixed packaging scripts | `6e72f2f` | `main` |
 | 40 | 2026-05-27 | Fix cache disable immediate refresh | `10d398e` | `main` |
 | 39 | 2026-05-27 | Manage MIB cache directories | `da673ed` | `main` |
 | 38 | 2026-05-27 | README organization research and rewrite | `8eacab5`, `b01e32d` | `main` |

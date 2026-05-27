@@ -1506,3 +1506,36 @@ Fixed Cache modal disable flow so disabling the only enabled cache directory cle
 ### Next Steps
 
 - None - task complete
+
+
+## Session 41: Add fixed packaging scripts
+
+**Date**: 2026-05-27
+**Task**: Add fixed packaging scripts
+**Branch**: `main`
+
+### Summary
+
+Added fixed Windows and macOS packaging scripts, configured domestic Electron/electron-builder mirrors, documented packaging commands and Mac support, and verified Windows NSIS installer generation.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `6e72f2f` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
