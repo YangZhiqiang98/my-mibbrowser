@@ -144,6 +144,10 @@ my-mibbrowser/
 - main/preload/renderer 共享的 IPC 类型放在 `src/main/*/types.ts` 或 `src/shared/`。
 - MIB IPC 合约、SNMP 树操作约束和工具窗口约束已记录在 `.trellis/spec/`，修改相关流程前先读对应 spec。
 
+## 致谢与链接
+
+- 感谢 [LINUX DO - 新的理想型社区](https://linux.do/) 提供开放、友好的技术交流氛围。
+
 ## License
 
 本项目按 GPL-3.0 协议发布。
