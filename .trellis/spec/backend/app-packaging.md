@@ -96,6 +96,7 @@ const iconPath = app.isPackaged
 - `npm run typecheck` must cover main-process path code.
 - `npm run lint` must pass without direct renderer imports.
 - `npm run build` must pass after changing packaging resources.
+- Packaging script changes must run `npm run package:win` on Windows when possible. The fixed script uses domestic mirrors and validates the full NSIS installer path.
 - For app icon changes, run an electron-builder directory packaging check such as:
 
 ```bash
@@ -106,7 +107,86 @@ Then verify `dist/win-unpacked/resources/icon.png` exists when runtime code depe
 
 ---
 
-## 7. Wrong vs Correct
+## 7. Windows Local Packaging Without Signing
+
+### 7.1 Scope / Trigger
+
+Use this contract when changing Windows electron-builder packaging, release scripts, or local installer generation.
+
+### 7.2 Signatures
+
+```json5
+{
+  "win": {
+    "icon": "build/icon.ico",
+    "signAndEditExecutable": false
+  }
+}
+```
+
+Packaging command:
+
+```bash
+npm run package:win
+```
+
+### 7.3 Contracts
+
+- Local unsigned Windows packaging disables code signing certificate auto-discovery:
+  - `CSC_IDENTITY_AUTO_DISCOVERY=false`
+- The fixed packaging script sets domestic mirrors before running electron-builder:
+  - `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/`
+  - `ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/`
+- `PACKAGE_PROXY` is opt-in only. Do not default to a local proxy port in committed scripts.
+- `win.signAndEditExecutable` remains `false` unless the machine has a signing/tooling setup that can handle electron-builder's Windows code-sign tooling.
+
+### 7.4 Validation & Error Matrix
+
+| Condition | Required behavior |
+|---|---|
+| No local signing certificate | Package unsigned installer without trying certificate auto-discovery |
+| Domestic network download | Use the npmmirror Electron and electron-builder binary mirrors |
+| Explicit `PACKAGE_PROXY` provided | Export HTTP(S) proxy variables for the package process only |
+| `PACKAGE_PROXY` missing | Clear package-process proxy variables so no implicit local proxy is used |
+| `winCodeSign-2.6.0.7z` symlink extraction fails | Keep `signAndEditExecutable: false` for local unsigned packaging |
+
+### 7.5 Good/Base/Bad Cases
+
+- Good: `npm run package:win` generates `dist/MIB Browser Setup <version>.exe` on a normal Windows user account.
+- Base: `dist/win-unpacked/resources/icon.png` exists because runtime icon assets are copied through `extraResources`.
+- Bad: Rely on a default local proxy such as `127.0.0.1:7897`; proxy use must be explicit.
+- Bad: Re-enable Windows sign/edit without testing on a normal, non-elevated Windows account.
+
+### 7.6 Wrong vs Correct
+
+#### Wrong
+
+```json5
+{
+  "win": {
+    "icon": "build/icon.ico"
+  }
+}
+```
+
+This can route local unsigned builds through electron-builder's Windows signing/editing toolchain and fail while extracting `winCodeSign-2.6.0.7z` if the account cannot create symlinks.
+
+#### Correct
+
+```json5
+{
+  "win": {
+    "icon": "build/icon.ico",
+    "signAndEditExecutable": false
+  }
+}
+```
+
+This keeps local Windows installer generation independent of signing-tool symlink extraction permissions.
+
+---
+
+## 8. Wrong vs Correct
 
 #### Wrong
 

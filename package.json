@@ -11,7 +11,9 @@
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json",
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
     "lint": "eslint src/",
-    "test": "vitest run"
+    "test": "vitest run",
+    "package:win": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-win.ps1",
+    "package:mac": "sh scripts/package-mac.sh"
   },
   "dependencies": {
     "@ant-design/icons": "^5.5.0",
