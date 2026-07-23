@@ -528,7 +528,11 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
           const streamedSession = isStreaming
             ? useAppStore.getState().currentResult
             : null
-          const session = streamedSession ?? buildResultSession(operation, oid, result, mibTree)
+          // GETBULK on a table/entry node fans out across a single subtree, so
+          // filter "next" OIDs that cross into unrelated tables. WALK / BULK_WALK
+          // aborts use the streamed session and never reach this fallback.
+          const session = streamedSession
+            ?? buildResultSession(operation, oid, result, mibTree, { filterToSubtree: true })
           setResult(session)
           setStatusMessage(
             `${operation}: aborted at ${session.varbinds.length} row(s), ${result.responseTime}ms`
@@ -550,7 +554,11 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
           )
         } else {
           setConnectionStatus('connected')
-          const session = buildResultSession(operation, oid, result, mibTree)
+          // GETBULK table/entry fan-out targets a single subtree; drop overflow
+          // "next" OIDs that spill into sibling tables (R8: filter on here only).
+          const session = buildResultSession(operation, oid, result, mibTree, {
+            filterToSubtree: true
+          })
           setResult(session)
           // PR3 — append "本次操作结果为空" when the response carried zero rows so
           // the status bar / message line surfaces the empty case without a popup.

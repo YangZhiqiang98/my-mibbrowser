@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildResultSession } from './resultColumns'
+import { buildResultSession, filterVarbindsToSubtree } from './resultColumns'
 import type { MibTreeNodeData } from '../types'
 import type { SnmpResult } from '../../../main/snmp/types'
 
@@ -169,7 +169,21 @@ describe('buildResultSession', () => {
     expect(session.varbinds).toHaveLength(0)
   })
 
-  it('filters GETBULK varbinds to rootOid subtree', () => {
+  it('filters GETBULK varbinds to rootOid subtree when filterToSubtree is on', () => {
+    const result = makeSnmpResult([
+      { oid: '1.3.6.1.2.1.1.1.0', value: 'Linux', type: 'OCTET STRING', isError: false },
+      { oid: '1.3.6.1.2.1.99.99.0', value: 'other', type: 'OCTET STRING', isError: false }
+    ])
+
+    const session = buildResultSession('GETBULK', '1.3.6.1.2.1.1', result, mockMibTree, {
+      filterToSubtree: true
+    })
+
+    expect(session.varbinds).toHaveLength(1)
+    expect(session.varbinds[0].columnName).toBe('sysDescr')
+  })
+
+  it('keeps out-of-subtree GETBULK varbinds by default (filterToSubtree off)', () => {
     const result = makeSnmpResult([
       { oid: '1.3.6.1.2.1.1.1.0', value: 'Linux', type: 'OCTET STRING', isError: false },
       { oid: '1.3.6.1.2.1.99.99.0', value: 'other', type: 'OCTET STRING', isError: false }
@@ -177,8 +191,25 @@ describe('buildResultSession', () => {
 
     const session = buildResultSession('GETBULK', '1.3.6.1.2.1.1', result, mockMibTree)
 
-    expect(session.varbinds).toHaveLength(1)
-    expect(session.varbinds[0].columnName).toBe('sysDescr')
+    expect(session.varbinds).toHaveLength(2)
+  })
+
+  it('preserves multi-subtree GET/SET rows targeting sibling subtrees (regression)', () => {
+    // Multi-node GET/SET tool window: rows target different subtrees. rootOid is
+    // only the first row's OID; without filterToSubtree off, the second row here
+    // (a sibling subtree) would be silently dropped.
+    const result = makeSnmpResult([
+      { oid: '1.3.6.1.2.1.1.1.0', value: 'Linux', type: 'OCTET STRING', isError: false },
+      { oid: '1.3.6.1.2.1.2.2.1.2.1', value: 'eth0', type: 'OCTET STRING', isError: false }
+    ])
+
+    const session = buildResultSession('GET', '1.3.6.1.2.1.1.1.0', result, mockMibTree)
+
+    expect(session.varbinds).toHaveLength(2)
+    expect(session.varbinds.map((v) => v.oid)).toEqual([
+      '1.3.6.1.2.1.1.1.0',
+      '1.3.6.1.2.1.2.2.1.2.1'
+    ])
   })
 
   it('keeps all varbinds for WALK/BULK_WALK without subtree filtering', () => {
@@ -190,5 +221,38 @@ describe('buildResultSession', () => {
     const session = buildResultSession('WALK', '1.3.6.1.2.1', result, mockMibTree)
 
     expect(session.varbinds).toHaveLength(2)
+  })
+})
+
+describe('filterVarbindsToSubtree', () => {
+  it('keeps the exact-match and descendant OIDs', () => {
+    const varbinds = [
+      { oid: '1.3.6.1.2.1.1' },
+      { oid: '1.3.6.1.2.1.1.1.0' }
+    ]
+
+    const kept = filterVarbindsToSubtree(varbinds, '1.3.6.1.2.1.1')
+
+    expect(kept).toHaveLength(2)
+  })
+
+  it('drops sibling subtrees on segment boundaries (1.3.6 does not match 1.3.60)', () => {
+    const varbinds = [
+      { oid: '1.3.6.1.2.1.1.1.0' },
+      { oid: '1.3.6.1.2.1.10.1.0' },
+      { oid: '1.3.6.1.2.1.99.1.0' }
+    ]
+
+    const kept = filterVarbindsToSubtree(varbinds, '1.3.6.1.2.1.1')
+
+    expect(kept.map((v) => v.oid)).toEqual(['1.3.6.1.2.1.1.1.0'])
+  })
+
+  it('normalizes leading dots on both the root and the varbinds', () => {
+    const varbinds = [{ oid: '.1.3.6.1.2.1.1.1.0' }]
+
+    const kept = filterVarbindsToSubtree(varbinds, '.1.3.6.1.2.1.1')
+
+    expect(kept).toHaveLength(1)
   })
 })

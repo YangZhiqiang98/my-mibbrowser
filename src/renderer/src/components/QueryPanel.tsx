@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react'
+import React, { useState, useCallback, useEffect, useMemo } from 'react'
 import { Input, Select, Button, InputNumber, Space, message, Tooltip } from 'antd'
 import {
   SendOutlined,
@@ -9,6 +9,7 @@ import {
 } from '@ant-design/icons'
 import { useAppStore } from '../stores/appStore'
 import { buildResultSession, initResolveContext, resolveVarbind } from '../utils/resultColumns'
+import { buildNameToOidIndex, resolveNameToOid } from '../utils/resolveNameToOid'
 import { createStreamingResultBatcher } from '../utils/streamingResultBatcher'
 import type { SnmpOperation, SnmpResult } from '../../../main/snmp/types'
 
@@ -36,6 +37,11 @@ export function QueryPanel(): React.ReactElement {
   const isSetOperation = queryOperation === 'SET'
   const isBulkOperation = queryOperation === 'GETBULK' || queryOperation === 'BULK_WALK'
 
+  // Name -> OID index rebuilt only when the MIB tree changes. QueryPanel accepts
+  // symbolic input (e.g. `sysDescr.0`); `mibTreeIndex` only does search, so this
+  // is the sole name-resolution path for the query bar.
+  const nameToOidIndex = useMemo(() => buildNameToOidIndex(mibTree), [mibTree])
+
   // GETNEXT was removed from the Operation dropdown — if a prior session
   // persisted the value (or hot-reload caught us with 'GETNEXT' in flight),
   // fall back to 'GET' so the Select doesn't render a value with no matching
@@ -47,9 +53,9 @@ export function QueryPanel(): React.ReactElement {
   }, [queryOperation, setQueryOperation])
 
   const handleSend = useCallback(async () => {
-    const oids = queryOid.split(',').map(s => s.trim()).filter(s => s.length > 0)
+    const tokens = queryOid.split(',').map(s => s.trim()).filter(s => s.length > 0)
 
-    if (oids.length === 0) {
+    if (tokens.length === 0) {
       message.warning('Please enter an OID')
       return
     }
@@ -57,6 +63,19 @@ export function QueryPanel(): React.ReactElement {
     if (queryOperation === 'SET' && !setValue.trim()) {
       message.warning('Please enter a value to set')
       return
+    }
+
+    // Resolve symbolic names (e.g. `sysDescr.0`) to numeric OIDs before sending.
+    // A numeric OID passes through unchanged; an unresolvable token warns the
+    // user and aborts so we never send a malformed request.
+    const oids: string[] = []
+    for (const token of tokens) {
+      const resolved = resolveNameToOid(token, nameToOidIndex)
+      if (resolved === null) {
+        message.warning(`Cannot resolve OID or name: ${token}`)
+        return
+      }
+      oids.push(resolved)
     }
 
     const isStreaming = queryOperation === 'WALK' || queryOperation === 'BULK_WALK'
@@ -176,7 +195,7 @@ export function QueryPanel(): React.ReactElement {
       }
       window.api.snmp.removeWalkListeners()
     }
-  }, [config, queryOid, queryOperation, setValue, setType, mibTree, setResult, setIsQuerying, setConnectionStatus, setStatusMessage, initResultSession, appendResultVarbinds])
+  }, [config, queryOid, queryOperation, setValue, setType, mibTree, nameToOidIndex, setResult, setIsQuerying, setConnectionStatus, setStatusMessage, initResultSession, appendResultVarbinds])
 
   const handleAbort = useCallback(async () => {
     const cancelled = await window.api.snmp.cancel()

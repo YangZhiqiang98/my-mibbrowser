@@ -203,6 +203,41 @@ export function resolveVarbind(
 }
 
 /**
+ * Keep only the varbinds whose OID is exactly `rootOid` or a descendant of it,
+ * using dot-segment boundary matching (so prefix 1.3.6 does NOT match 1.3.60).
+ *
+ * Pure helper so the subtree-filter decision is testable in isolation and the
+ * boundary rule is shared with `resolveOidToColumn` (see
+ * `backend/snmp-guidelines.md` Constraint 1 — same predicate as `oidInSubtree`).
+ */
+export function filterVarbindsToSubtree<T extends { oid: string }>(
+  varbinds: readonly T[],
+  rootOid: string
+): T[] {
+  const rootOidNorm = normalizeOid(rootOid)
+  return varbinds.filter((vb) => isOidWithinPrefix(normalizeOid(vb.oid), rootOidNorm))
+}
+
+/**
+ * Options controlling how a raw SNMP response is turned into a ResultSession.
+ */
+export interface BuildResultSessionOptions {
+  /**
+   * When true, drop varbinds that fall outside the `rootOid` subtree
+   * (dot-segment boundary match). Defaults to `false` — every varbind in the
+   * response is kept.
+   *
+   * Only the MIB-tree table/entry GETBULK fan-out enables this, because there
+   * the single response deliberately targets one subtree and "next" OIDs that
+   * cross into unrelated tables are noise. Every other call site (QueryPanel
+   * manual GETBULK, and — critically — the multi-node GET/SET tool window that
+   * sends rows targeting *different* subtrees) must leave it off, otherwise
+   * rows whose OID is not under the first OID's subtree are silently dropped.
+   */
+  filterToSubtree?: boolean
+}
+
+/**
  * Build a ResultSession from a raw SNMP response by mapping each varbind
  * into a flat list row with MIB name resolution and type-aware formatting.
  *
@@ -211,27 +246,23 @@ export function resolveVarbind(
  * - OID-to-name resolution uses longest-prefix MIB matching.
  * - SNMP-level error varbinds (noSuchObject / noSuchInstance / endOfMibView)
  *   are kept with isError=true and the error name in errorTag.
+ * - By default no subtree filtering is applied; pass
+ *   `{ filterToSubtree: true }` only for the single-subtree GETBULK fan-out.
  */
 export function buildResultSession(
   operation: SnmpOperation,
   rootOid: string,
   response: SnmpResult,
-  mibTree: readonly MibTreeNodeData[]
+  mibTree: readonly MibTreeNodeData[],
+  options: BuildResultSessionOptions = {}
 ): ResultSession {
   const ctx = initResolveContext(mibTree)
 
-  // Filter varbinds to only include those within the rootOid subtree.
-  // Raw GETBULK returns "next" OIDs that may cross into unrelated tables.
-  const rootOidNorm = normalizeOid(rootOid)
-  const filteredVarbinds = response.varbinds.filter((vb) => {
-    // WALK / BULK_WALK already filter by subtree; also allow scalar GETs
-    // where the returned OID exactly matches the root.
-    if (operation === 'WALK' || operation === 'BULK_WALK') return true
-    const oid = normalizeOid(vb.oid)
-    return oid === rootOidNorm || oid.startsWith(rootOidNorm + '.')
-  })
+  const sourceVarbinds = options.filterToSubtree
+    ? filterVarbindsToSubtree(response.varbinds, rootOid)
+    : response.varbinds
 
-  const varbinds: ResultVarbind[] = filteredVarbinds.map((vb, i) =>
+  const varbinds: ResultVarbind[] = sourceVarbinds.map((vb, i) =>
     resolveVarbind(vb, ctx, i + 1)
   )
 
