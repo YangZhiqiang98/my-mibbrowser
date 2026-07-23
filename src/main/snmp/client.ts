@@ -3,7 +3,16 @@ import snmp from 'net-snmp'
 import type { SnmpConfig, SnmpResult, SnmpVarbind, SnmpSetValue, SecurityLevel } from './types'
 import { resolveAuthProtocol, resolvePrivProtocol, resolveSnmpTransport } from './options'
 import { prepareSetVarbinds } from './setValues'
+import { compareOids, isNoSuchNameEnd } from './oid'
 import { debugError, debugLog } from '../debugLogger'
+
+/**
+ * Hard upper bound on the number of rows a single WALK / BULK_WALK may collect.
+ * Protects the renderer (and memory) from an agent that returns an unbounded
+ * or looping OID sequence. When hit, the walk terminates with `success: true`
+ * and a `warning`, keeping every row gathered up to the cap.
+ */
+const WALK_MAX_ROWS = 50000
 
 /**
  * Raw varbind shape returned by net-snmp before formatting.
@@ -673,6 +682,10 @@ export function snmpWalk(config: SnmpConfig, rootOid: string, options?: WalkOpti
     const startTime = Date.now()
     const results: SnmpVarbind[] = []
     let settled = false
+    // Tracks the last OID pushed into `results` ACROSS callbacks so the
+    // monotonic-increasing guard can detect a looping / non-increasing agent
+    // even when each getNext delivers a single varbind per callback.
+    let lastPushedOid: string | null = null
     const onProgress = options?.onProgress
     logSnmpStart('WALK', config, { rootOid })
 
@@ -727,6 +740,18 @@ export function snmpWalk(config: SnmpConfig, rootOid: string, options?: WalkOpti
       }
 
       if (error) {
+        // SNMPv1 agents signal "walked off the end of the MIB" with a
+        // NoSuchName error-status rather than endOfMibView. That is a normal
+        // walk terminator: resolve success with whatever we collected.
+        if (isNoSuchNameEnd(error)) {
+          finish(session, {
+            success: true,
+            varbinds: results,
+            responseTime: Date.now() - startTime,
+            timestamp: Date.now()
+          })
+          return
+        }
         finish(session, {
           success: false,
           varbinds: results,
@@ -765,7 +790,36 @@ export function snmpWalk(config: SnmpConfig, rootOid: string, options?: WalkOpti
           return
         }
 
+        // Row cap guard: bail out cleanly (with a warning) before the result
+        // set can grow without bound.
+        if (results.length >= WALK_MAX_ROWS) {
+          finish(session, {
+            success: true,
+            varbinds: results,
+            warning: `Walk stopped after reaching the ${WALK_MAX_ROWS}-row limit; results may be incomplete.`,
+            responseTime: Date.now() - startTime,
+            timestamp: Date.now()
+          })
+          return
+        }
+
+        // Monotonic-increasing guard: a well-behaved agent always returns an
+        // OID strictly greater than the previous one. If it does not, the walk
+        // would loop forever — terminate with a warning instead.
+        const normalizedOid = stripLeadingDot(vb.oid)
+        if (lastPushedOid !== null && compareOids(normalizedOid, lastPushedOid) <= 0) {
+          finish(session, {
+            success: true,
+            varbinds: results,
+            warning: `Walk stopped: agent returned a non-increasing OID (${normalizedOid}).`,
+            responseTime: Date.now() - startTime,
+            timestamp: Date.now()
+          })
+          return
+        }
+
         results.push(formatVarbindValue(vb))
+        lastPushedOid = normalizedOid
       }
 
       // Notify progress listeners with the varbinds pushed in this callback.
@@ -828,6 +882,9 @@ export function snmpBulkWalk(
     const startTime = Date.now()
     const results: SnmpVarbind[] = []
     let settled = false
+    // See snmpWalk: tracks the last pushed OID across callbacks for the
+    // monotonic-increasing loop guard.
+    let lastPushedOid: string | null = null
     const effectiveMaxRepetitions = maxRepetitions ?? config.bulkMaxRepetitions
     const onProgress = options?.onProgress
     logSnmpStart('BULK_WALK', config, {
@@ -882,6 +939,16 @@ export function snmpBulkWalk(
       }
 
       if (error) {
+        // SNMPv1-style NoSuchName end-of-MIB: treat as a normal walk end.
+        if (isNoSuchNameEnd(error)) {
+          finish(session, {
+            success: true,
+            varbinds: results,
+            responseTime: Date.now() - startTime,
+            timestamp: Date.now()
+          })
+          return
+        }
         finish(session, {
           success: false,
           varbinds: results,
@@ -895,6 +962,7 @@ export function snmpBulkWalk(
       const flat = flattenBulkVarbinds(varbinds || [], 0)
       let lastOid = ''
       let hitEndOfMib = false
+      let warning: string | undefined
 
       for (const vb of flat) {
         // endOfMibView (type 130) means the agent finished — stop the walk
@@ -912,8 +980,24 @@ export function snmpBulkWalk(
           break
         }
 
+        // Row cap guard — stop before results grows without bound.
+        if (results.length >= WALK_MAX_ROWS) {
+          warning = `Walk stopped after reaching the ${WALK_MAX_ROWS}-row limit; results may be incomplete.`
+          hitEndOfMib = true
+          break
+        }
+
+        // Monotonic-increasing guard — stop a looping / non-increasing agent.
+        const normalizedOid = stripLeadingDot(vb.oid)
+        if (lastPushedOid !== null && compareOids(normalizedOid, lastPushedOid) <= 0) {
+          warning = `Walk stopped: agent returned a non-increasing OID (${normalizedOid}).`
+          hitEndOfMib = true
+          break
+        }
+
         results.push(formatVarbindValue(vb))
         lastOid = vb.oid
+        lastPushedOid = normalizedOid
       }
 
       if (onProgress && results.length > pushedBefore) {
@@ -924,6 +1008,7 @@ export function snmpBulkWalk(
         finish(session, {
           success: true,
           varbinds: results,
+          warning,
           responseTime: Date.now() - startTime,
           timestamp: Date.now()
         })

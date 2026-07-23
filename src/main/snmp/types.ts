@@ -100,6 +100,13 @@ export interface SnmpResult {
    * and the final IPC response intentionally omitted the full varbind payload.
    */
   streamed?: boolean
+  /**
+   * Non-fatal advisory attached when a walk terminated early for a protective
+   * reason (row cap reached, agent returned a non-increasing OID). `success`
+   * stays `true` and `varbinds` holds everything collected so far. Optional so
+   * callers treat `undefined` as "no warning".
+   */
+  warning?: string
 }
 
 export interface SnmpWalkRequestOptions {

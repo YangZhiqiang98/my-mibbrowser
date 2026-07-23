@@ -4,8 +4,10 @@ import {
   buildMibTree,
   createOidNameResolver,
   MibParser,
+  parseOidDef,
   resolveOidToName,
-  resolveOidToNameWithResolver
+  resolveOidToNameWithResolver,
+  resolveParent
 } from './parser'
 
 const baseMib = `
@@ -201,5 +203,140 @@ describe('OID name resolver', () => {
     ]
 
     expect(resolveOidToName('.1.3.6.1.2.1.1.1.0', nodes)).toBe('sysDescr.0')
+  })
+})
+
+function makeNodeIn(module: string, name: string, oidString: string): MibNode {
+  return {
+    ...makeNode(name, oidString || '0'),
+    id: `${module}::${name}`,
+    module,
+    oid: oidString ? oidString.split('.').map(Number) : [],
+    oidString
+  }
+}
+
+function buildIndices(nodes: MibNode[]): {
+  byModuleName: Map<string, MibNode>
+  byName: Map<string, MibNode[]>
+} {
+  const byModuleName = new Map<string, MibNode>()
+  const byName = new Map<string, MibNode[]>()
+  for (const node of nodes) {
+    const key = `${node.module}::${node.name}`
+    if (!byModuleName.has(key)) byModuleName.set(key, node)
+    const list = byName.get(node.name)
+    if (list) list.push(node)
+    else byName.set(node.name, [node])
+  }
+  return { byModuleName, byName }
+}
+
+describe('parseOidDef', () => {
+  it('parses a single child number', () => {
+    expect(parseOidDef('system 1')).toEqual({ parentName: 'system', childNumbers: [1] })
+  })
+
+  it('parses a large single child number', () => {
+    expect(parseOidDef('enterprises 1234')).toEqual({
+      parentName: 'enterprises',
+      childNumbers: [1234]
+    })
+  })
+
+  it('parses multiple trailing numbers like { enterprises 1 2 }', () => {
+    expect(parseOidDef('{ enterprises 1 2 }')).toEqual({
+      parentName: 'enterprises',
+      childNumbers: [1, 2]
+    })
+  })
+
+  it('returns null when there is no trailing number', () => {
+    expect(parseOidDef('iso')).toBeNull()
+    expect(parseOidDef('')).toBeNull()
+  })
+})
+
+describe('resolveParent', () => {
+  it('prefers a parent defined in the same module', () => {
+    // Arrange: two modules each define a `products` node.
+    const productsA = makeNodeIn('A-MIB', 'products', '1.3.6.1.4.1.100')
+    const productsB = makeNodeIn('B-MIB', 'products', '1.3.6.1.4.1.200')
+    const { byModuleName, byName } = buildIndices([productsA, productsB])
+
+    // Act
+    const parent = resolveParent('products', 'B-MIB', byModuleName, byName, true)
+
+    // Assert
+    expect(parent).toBe(productsB)
+  })
+
+  it('falls back to a cross-module match when the same module has none', () => {
+    const enterprises = makeNodeIn('RFC', 'enterprises', '1.3.6.1.4.1')
+    const { byModuleName, byName } = buildIndices([enterprises])
+
+    const parent = resolveParent('enterprises', 'VENDOR-MIB', byModuleName, byName, true)
+
+    expect(parent).toBe(enterprises)
+  })
+
+  it('skips an unresolved same-module parent when a resolved OID is required', () => {
+    // Same-module parent exists but has no OID yet; a resolved cross-module one does.
+    const unresolvedSameModule = makeNodeIn('VENDOR-MIB', 'base', '')
+    const resolvedOther = makeNodeIn('RFC', 'base', '1.3.6.1.4.1.9')
+    const { byModuleName, byName } = buildIndices([unresolvedSameModule, resolvedOther])
+
+    const parent = resolveParent('base', 'VENDOR-MIB', byModuleName, byName, true)
+
+    expect(parent).toBe(resolvedOther)
+  })
+})
+
+describe('buildMibTree parent resolution', () => {
+  it('attaches cross-module same-named parents to their own module', () => {
+    // Arrange
+    const aMib = `
+A-MIB DEFINITIONS ::= BEGIN
+IMPORTS enterprises FROM SNMPv2-SMI;
+products OBJECT IDENTIFIER ::= { enterprises 100 }
+aItem OBJECT IDENTIFIER ::= { products 1 }
+END
+`
+    const bMib = `
+B-MIB DEFINITIONS ::= BEGIN
+IMPORTS enterprises FROM SNMPv2-SMI;
+products OBJECT IDENTIFIER ::= { enterprises 200 }
+bItem OBJECT IDENTIFIER ::= { products 1 }
+END
+`
+    const parser = new MibParser()
+    const result = parser.parseFileContents([
+      { name: 'A-MIB.my', content: aMib },
+      { name: 'B-MIB.my', content: bMib }
+    ])
+
+    // Act
+    const tree = buildMibTree(result.modules)
+    const flat = new Map(tree.map((n) => [n.id, n]))
+
+    // Assert: each item anchors under its own module's `products`.
+    expect(flat.get('A-MIB::aItem')?.oidString).toBe('1.3.6.1.4.1.100.1')
+    expect(flat.get('B-MIB::bItem')?.oidString).toBe('1.3.6.1.4.1.200.1')
+  })
+
+  it('resolves multi-segment definitions like { enterprises 1 2 }', () => {
+    const mMib = `
+M-MIB DEFINITIONS ::= BEGIN
+IMPORTS enterprises FROM SNMPv2-SMI;
+foo OBJECT IDENTIFIER ::= { enterprises 1 2 }
+END
+`
+    const parser = new MibParser()
+    const result = parser.parseFileContents([{ name: 'M-MIB.my', content: mMib }])
+
+    const tree = buildMibTree(result.modules)
+    const foo = tree.find((n) => n.id === 'M-MIB::foo')
+
+    expect(foo?.oidString).toBe('1.3.6.1.4.1.1.2')
   })
 })

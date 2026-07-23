@@ -613,7 +613,7 @@ export function buildMibTree(modules: MibModule[]): MibNode[] {
   }
 
   // Build parent-child relationships and resolve OID paths
-  buildRelationships(allNodes, nodeMap)
+  buildRelationships(allNodes)
 
   // --- Deduplicate by OID ---
   // Prefer standard root nodes; merge children from duplicates.
@@ -773,26 +773,31 @@ function createStandardRootNodes(): MibNode[] {
 }
 
 /**
- * Parse the ::= { parentName childNumber } definition into parent name and child number.
- * Handles forms like:
- *   "system 1"          -> { parentName: "system", childNumber: 1 }
- *   "enterprises 1234"  -> { parentName: "enterprises", childNumber: 1234 }
- *   "mgmt 1"            -> { parentName: "mgmt", childNumber: 1 }
+ * Parse the ::= { parentName childNumber... } definition into a parent name
+ * and the trailing child numbers. Supports one or more trailing numbers so
+ * multi-segment forms resolve correctly:
+ *   "system 1"          -> { parentName: "system", childNumbers: [1] }
+ *   "enterprises 1234"  -> { parentName: "enterprises", childNumbers: [1234] }
+ *   "enterprises 1 2"   -> { parentName: "enterprises", childNumbers: [1, 2] }
  */
-function parseOidDef(oidDef: string): { parentName: string; childNumber: number } | null {
+export function parseOidDef(oidDef: string): { parentName: string; childNumbers: number[] } | null {
   // Strip surrounding braces: "{ iso 3 }" → "iso 3"
   const trimmed = oidDef.trim().replace(/^\{\s*/, '').replace(/\s*\}$/, '')
   if (!trimmed) return null
 
-  const simpleMatch = trimmed.match(/^(\S+)\s+(\d+)$/)
-  if (simpleMatch) {
-    return {
-      parentName: simpleMatch[1],
-      childNumber: parseInt(simpleMatch[2], 10)
-    }
-  }
+  // One non-numeric parent token followed by one or more numeric children.
+  const match = trimmed.match(/^(\S+)((?:\s+\d+)+)$/)
+  if (!match) return null
 
-  return null
+  const parentName = match[1]
+  const childNumbers = match[2]
+    .trim()
+    .split(/\s+/)
+    .map((segment) => parseInt(segment, 10))
+
+  if (childNumbers.some((n) => Number.isNaN(n))) return null
+
+  return { parentName, childNumbers }
 }
 
 /**
@@ -834,15 +839,60 @@ function parseMultiSegmentOidDef(oidDef: string): number[] | null {
 }
 
 /**
+ * Resolve the parent node named by an oidDef, preferring a definition in the
+ * SAME module before falling back to any cross-module match of that name.
+ *
+ * This fixes cross-module same-named parents mis-attaching: if module A and
+ * module B both define `products`, a child in A referencing `products` must
+ * anchor to `A::products`, not whichever definition happened to be indexed
+ * first globally.
+ *
+ * @param requireResolvedOid when true, only parents that already have a
+ *   resolved numeric OID are eligible (used by the fixpoint second pass).
+ */
+export function resolveParent(
+  parentName: string,
+  moduleName: string,
+  byModuleName: ReadonlyMap<string, MibNode>,
+  byName: ReadonlyMap<string, MibNode[]>,
+  requireResolvedOid: boolean
+): MibNode | undefined {
+  const sameModule = byModuleName.get(`${moduleName}::${parentName}`)
+  if (sameModule && (!requireResolvedOid || sameModule.oid.length > 0)) {
+    return sameModule
+  }
+
+  const candidates = byName.get(parentName)
+  if (!candidates || candidates.length === 0) return undefined
+
+  if (!requireResolvedOid) return candidates[0]
+  return candidates.find((candidate) => candidate.oid.length > 0)
+}
+
+/**
  * Build parent-child relationships between nodes and resolve OID paths.
  *
  * For each node that has an oidDef like "system 1", we:
- * 1. Parse the parent name and child number
- * 2. Look up the parent in the nodeMap
+ * 1. Parse the parent name and child number(s)
+ * 2. Look up the parent (same-module preferred) via resolveParent
  * 3. Walk up the parent chain to build the full OID path
  * 4. Set parentId and update parent's children array
  */
-function buildRelationships(nodes: MibNode[], nodeMap: Map<string, MibNode>): void {
+function buildRelationships(nodes: MibNode[]): void {
+  // Index nodes for parent resolution. `byModuleName` keeps the first
+  // definition per (module, name); `byName` keeps every definition of a name
+  // so a cross-module fallback can prefer one with a resolved OID.
+  const byModuleName = new Map<string, MibNode>()
+  const byName = new Map<string, MibNode[]>()
+  for (const node of nodes) {
+    const moduleKey = `${node.module}::${node.name}`
+    if (!byModuleName.has(moduleKey)) byModuleName.set(moduleKey, node)
+
+    const existing = byName.get(node.name)
+    if (existing) existing.push(node)
+    else byName.set(node.name, [node])
+  }
+
   // First pass: parse oidDef and set parentId for all nodes
   for (const node of nodes) {
     if (!node.oidDef) continue
@@ -867,8 +917,8 @@ function buildRelationships(nodes: MibNode[], nodeMap: Map<string, MibNode>): vo
       continue
     }
 
-    const { parentName, childNumber } = parsed
-    const parent = nodeMap.get(parentName)
+    const { parentName, childNumbers } = parsed
+    const parent = resolveParent(parentName, node.module, byModuleName, byName, false)
 
     if (!parent) {
       // Parent not found yet (may be in a not-yet-loaded MIB file) - skip for now
@@ -886,7 +936,7 @@ function buildRelationships(nodes: MibNode[], nodeMap: Map<string, MibNode>): vo
     // Resolve OID by walking up the parent chain
     // Only resolve if the parent already has a resolved OID
     if (parent.oid.length > 0) {
-      node.oid = [...parent.oid, childNumber]
+      node.oid = [...parent.oid, ...childNumbers]
       node.oidString = node.oid.join('.')
     }
   }
@@ -909,15 +959,10 @@ function buildRelationships(nodes: MibNode[], nodeMap: Map<string, MibNode>): vo
       const parsed = parseOidDef(node.oidDef)
       if (!parsed) continue
 
-      const { parentName, childNumber } = parsed
+      const { parentName, childNumbers } = parsed
 
-      // Look up parent - check nodeMap first, then search by name
-      let parent = nodeMap.get(parentName)
-      if (!parent) {
-        // Try to find parent among all nodes (handles duplicates)
-        parent = nodes.find(n => n.name === parentName && n.oid.length > 0)
-      }
-
+      // Look up parent — same-module preferred, then any resolved match.
+      const parent = resolveParent(parentName, node.module, byModuleName, byName, true)
       if (!parent || parent.oid.length === 0) continue
 
       // Set parent relationship
@@ -929,7 +974,7 @@ function buildRelationships(nodes: MibNode[], nodeMap: Map<string, MibNode>): vo
       }
 
       // Resolve OID
-      node.oid = [...parent.oid, childNumber]
+      node.oid = [...parent.oid, ...childNumbers]
       node.oidString = node.oid.join('.')
       changed = true
     }
