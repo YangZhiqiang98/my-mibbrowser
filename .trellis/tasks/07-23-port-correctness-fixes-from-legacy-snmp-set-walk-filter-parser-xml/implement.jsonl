@@ -1,0 +1,8 @@
+{"file": ".trellis/spec/backend/snmp-guidelines.md", "reason": "OID segment-boundary + walk contracts govern R8 filter, R10 walk guards, R11 parser OID changes"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "R1 SET conversion, R3 safeStorage, R10 walk failures must return typed results, never throw across IPC"}
+{"file": ".trellis/spec/backend/mib-ipc.md", "reason": "R6 removes mib:search IPC; R2/R3 touch export + profile IPC handlers"}
+{"file": ".trellis/spec/frontend/mib-tree-snmp-ops.md", "reason": "R8 filter fan-out + R9 symbolic resolution flow through the tree/query SNMP op path"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "R8/R9 build result sessions through the store write path; must not desync"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "New filterToSubtree option, warning field, encrypted flag must stay typed across preload"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Fixes span main client/handlers/parser and renderer result pipeline"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Porting helpers (setValues/exporters/profileCrypto/resolveNameToOid) — reuse new-project patterns, avoid drift"}

@@ -2,6 +2,7 @@
 import snmp from 'net-snmp'
 import type { SnmpConfig, SnmpResult, SnmpVarbind, SnmpSetValue, SecurityLevel } from './types'
 import { resolveAuthProtocol, resolvePrivProtocol, resolveSnmpTransport } from './options'
+import { prepareSetVarbinds } from './setValues'
 import { debugError, debugLog } from '../debugLogger'
 
 /**
@@ -535,6 +536,35 @@ export function snmpSet(config: SnmpConfig, values: SnmpSetValue[]): Promise<Snm
       resolve(result)
     }
 
+    const typeMap: Record<string, number> = {
+      'INTEGER': snmp.ObjectType.Integer,
+      'OCTET STRING': snmp.ObjectType.OctetString,
+      'OBJECT IDENTIFIER': snmp.ObjectType.OID,
+      'NULL': snmp.ObjectType.Null,
+      'IpAddress': snmp.ObjectType.IpAddress,
+      'Counter32': snmp.ObjectType.Counter,
+      'Gauge32': snmp.ObjectType.Gauge,
+      'TimeTicks': snmp.ObjectType.TimeTicks,
+      'Opaque': snmp.ObjectType.Opaque,
+      'Counter64': snmp.ObjectType.Counter64
+    }
+
+    // Convert and validate BEFORE creating a session. Illegal input (e.g. an
+    // INTEGER field containing "abc") returns a friendly error and never opens
+    // a UDP socket.
+    const prepared = prepareSetVarbinds(values, typeMap, snmp.ObjectType.OctetString)
+    if (!prepared.ok) {
+      finish(null, {
+        success: false,
+        varbinds: [],
+        error: prepared.error,
+        responseTime: Date.now() - startTime,
+        timestamp: Date.now()
+      })
+      return
+    }
+    const varbinds = prepared.varbinds
+
     let session: SnmpSession
     try {
       session = createSession(config)
@@ -551,25 +581,6 @@ export function snmpSet(config: SnmpConfig, values: SnmpSetValue[]): Promise<Snm
 
     currentSession = session
     abortRequested = false
-
-    const typeMap: Record<string, number> = {
-      'INTEGER': snmp.ObjectType.Integer,
-      'OCTET STRING': snmp.ObjectType.OctetString,
-      'OBJECT IDENTIFIER': snmp.ObjectType.OID,
-      'NULL': snmp.ObjectType.Null,
-      'IpAddress': snmp.ObjectType.IpAddress,
-      'Counter32': snmp.ObjectType.Counter,
-      'Gauge32': snmp.ObjectType.Gauge,
-      'TimeTicks': snmp.ObjectType.TimeTicks,
-      'Opaque': snmp.ObjectType.Opaque,
-      'Counter64': snmp.ObjectType.Counter64
-    }
-
-    const varbinds = values.map(v => ({
-      oid: v.oid,
-      type: typeMap[v.type] || snmp.ObjectType.OctetString,
-      value: v.value
-    }))
 
     try {
       session.set(varbinds, (error: unknown, responseVarbinds: unknown[]) => {

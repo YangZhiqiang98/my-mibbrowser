@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/snmp-guidelines.md", "reason": "Verify OID comparisons/walk guards respect segment boundaries"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Quality bar for main-process (client, handlers, parser) changes"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Quality bar for renderer changes"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "Confirm new options/flags stay strictly typed across the preload boundary"}

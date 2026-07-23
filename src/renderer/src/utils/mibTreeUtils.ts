@@ -24,8 +24,6 @@ interface RawMibNode {
  * Resolves OIDs by walking the parent chain for nodes with empty oidString.
  */
 export function buildTreeFromNodes(nodes: RawMibNode[]): MibTreeNodeData[] {
-  const nodeMap = new Map(nodes.map(n => [n.id, n]))
-
   // Resolve OIDs for nodes with empty oidString by walking up the parent chain
   const resolvedOids = new Map<string, string>()
   for (const node of nodes) {
@@ -51,21 +49,11 @@ export function buildTreeFromNodes(nodes: RawMibNode[]): MibTreeNodeData[] {
         continue
       }
 
-      // Fallback: try to build OID from parent's resolved OID
-      // This is less reliable as child index may not match OID suffix,
-      // but it's better than having no OID at all for search/navigation
-      const parentOid = resolvedOids.get(node.parentId)
-      if (!parentOid) continue
-
-      const parent = nodeMap.get(node.parentId)
-      if (!parent) continue
-
-      const childIndex = parent.children.indexOf(node.id)
-      if (childIndex >= 0) {
-        const fullOid = `${parentOid}.${childIndex + 1}`
-        resolvedOids.set(node.id, fullOid)
-        changed = true
-      }
+      // No reliable OID source: leave this node's OID empty. Fabricating an OID
+      // from the child index (`${parentOid}.${childIndex + 1}`) produced wrong
+      // OIDs whenever the child position did not match the numeric suffix,
+      // causing SNMP operations to target the wrong object. An empty OID is
+      // correctly treated as "not operable" downstream.
     }
   }
 

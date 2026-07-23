@@ -31,7 +31,6 @@ declare global {
         openFiles: () => Promise<MibParseResult>
         openDirectory: () => Promise<MibParseResult>
         getTree: () => Promise<MibNode[]>
-        search: (query: string) => Promise<MibNode[]>
         loadContent: (contents: Array<{ name: string; content: string }>) => Promise<MibParseResult>
         selectCacheDir: () => Promise<string | null>
         getCacheDir: () => Promise<string>

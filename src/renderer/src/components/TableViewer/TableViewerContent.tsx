@@ -31,6 +31,7 @@ import {
   publishStatusToMain,
   publishToastToMain
 } from '../toolWindowHelpers'
+import { toHexDisplay } from '../../utils/hexDisplay'
 
 interface TableViewerContentProps {
   context: SnmpToolWindowContext
@@ -698,13 +699,4 @@ function getEnumOptions(column: TableColumnMeta): Array<{ label: string; value: 
     options.push({ label: `${match[1]} (${match[2]})`, value: match[2] })
   }
   return options
-}
-
-/**
- * Convert a string to a space-separated hex display for OCTET STRING toggle.
- */
-function toHexDisplay(str: string): string {
-  return Array.from(str)
-    .map((c) => c.charCodeAt(0).toString(16).padStart(2, '0'))
-    .join(' ')
 }

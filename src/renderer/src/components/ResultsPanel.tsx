@@ -9,6 +9,7 @@ import {
 } from '@ant-design/icons'
 import { useAppStore } from '../stores/appStore'
 import type { ResultVarbind } from '../types'
+import { toHexDisplay } from '../utils/hexDisplay'
 
 const LINE_HEIGHT = 22 // approximate px per log row (font-size 13px, line-height 1.6, + 1px padding)
 const OVERSCAN = 10 // rows rendered above/below the visible viewport
@@ -361,13 +362,4 @@ function OCTETSTRINGCell({ value, isHex, onToggle }: OCTETSTRINGCellProps): Reac
       </button>
     </>
   )
-}
-
-/**
- * Convert a string to a space-separated hex display for OCTET STRING toggle.
- */
-function toHexDisplay(str: string): string {
-  return Array.from(str)
-    .map((c) => c.charCodeAt(0).toString(16).padStart(2, '0'))
-    .join(' ')
 }

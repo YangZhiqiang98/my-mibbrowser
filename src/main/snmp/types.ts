@@ -137,4 +137,10 @@ export interface ConnectionProfile {
   createdAt: number
   /** Last used timestamp */
   lastUsedAt: number
+  /**
+   * Whether the config's sensitive fields (community / auth / priv passwords)
+   * are stored encrypted via Electron safeStorage. Absent/false means the
+   * record predates encryption and is stored as plaintext (backward compatible).
+   */
+  encrypted?: boolean
 }

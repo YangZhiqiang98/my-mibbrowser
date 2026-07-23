@@ -138,6 +138,9 @@ function formatVarbindValue(value: SnmpResult['varbinds'][number]['value'], type
     if (typeof maybeBuf.length === 'number' && typeof maybeBuf[0] !== 'undefined') {
       return formatBytesToString(Array.from(maybeBuf), type)
     }
+    // Empty object (e.g. a zero-length Buffer that serialized to `{}`): render
+    // as an empty string rather than the literal "{}".
+    if (Object.keys(obj).length === 0) return ''
     try {
       return JSON.stringify(value)
     } catch {

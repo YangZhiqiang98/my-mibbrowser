@@ -32,6 +32,8 @@ import {
   toCacheDirectorySources
 } from './cacheDirectoryConfig'
 import type { StoredCacheDirectory } from './cacheDirectoryConfig'
+import { buildCsv, buildXml } from './exporters'
+import { decryptProfileConfig, encryptProfileConfig } from './profileCrypto'
 
 const mibParser = new MibParser()
 
@@ -310,7 +312,6 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('mib:open-files', handleOpenMibFiles)
   ipcMain.handle('mib:open-directory', handleOpenMibDirectory)
   ipcMain.handle('mib:get-tree', handleGetMibTree)
-  ipcMain.handle('mib:search', handleSearchMib)
   ipcMain.handle('mib:load-content', handleLoadMibContent)
 
   // Cache directory operations
@@ -674,19 +675,6 @@ function handleGetMibTree(): MibNode[] {
 }
 
 /**
- * Search MIB nodes by name or OID
- */
-function handleSearchMib(_event: IpcMainInvokeEvent, query: string): MibNode[] {
-  if (!query || query.trim().length === 0) return []
-
-  const lowerQuery = query.toLowerCase()
-  return getCurrentMibTree().filter(node =>
-    node.name.toLowerCase().includes(lowerQuery) ||
-    node.oidString.includes(lowerQuery)
-  ).slice(0, 100) // Limit results
-}
-
-/**
  * Resolve OID names in SNMP varbinds using the current MIB tree
  */
 function resolveVarbindNames(varbinds: SnmpVarbind[]): SnmpVarbind[] {
@@ -950,7 +938,7 @@ function handleSetLastSnmpConfig(_event: IpcMainInvokeEvent, config: SnmpConfig)
  */
 function handleSaveProfile(_event: IpcMainInvokeEvent, profile: { id: string; name: string; config: SnmpConfig }): void {
   const profilesPath = getProfilesPath()
-  let profiles: Array<{ id: string; name: string; config: SnmpConfig; createdAt: number; lastUsedAt: number }> = []
+  let profiles: Array<{ id: string; name: string; config: SnmpConfig; createdAt: number; lastUsedAt: number; encrypted?: boolean }> = []
 
   if (existsSync(profilesPath)) {
     try {
@@ -963,10 +951,15 @@ function handleSaveProfile(_event: IpcMainInvokeEvent, profile: { id: string; na
   const existing = profiles.findIndex(p => p.id === profile.id)
   const now = Date.now()
 
+  // Encrypt sensitive fields before persisting. Degrades to plaintext with
+  // `encrypted: false` when OS-backed encryption is unavailable.
+  const { config: storedConfig, encrypted } = encryptProfileConfig(profile.config)
+  const storedProfile = { id: profile.id, name: profile.name, config: storedConfig, encrypted }
+
   if (existing >= 0) {
-    profiles[existing] = { ...profiles[existing], ...profile, lastUsedAt: now }
+    profiles[existing] = { ...profiles[existing], ...storedProfile, lastUsedAt: now }
   } else {
-    profiles.push({ ...profile, createdAt: now, lastUsedAt: now })
+    profiles.push({ ...storedProfile, createdAt: now, lastUsedAt: now })
   }
 
   writeFileSync(profilesPath, JSON.stringify(profiles, null, 2), 'utf-8')
@@ -980,7 +973,14 @@ function handleLoadProfiles(): Array<{ id: string; name: string; config: SnmpCon
   if (!existsSync(profilesPath)) return []
 
   try {
-    return JSON.parse(readFileSync(profilesPath, 'utf-8'))
+    const stored: Array<{ id: string; name: string; config: SnmpConfig; createdAt: number; lastUsedAt: number; encrypted?: boolean }> =
+      JSON.parse(readFileSync(profilesPath, 'utf-8'))
+    // Decrypt sensitive fields. Legacy plaintext profiles (no `encrypted` flag)
+    // pass through unchanged.
+    return stored.map(({ encrypted, ...profile }) => ({
+      ...profile,
+      config: decryptProfileConfig(profile.config, encrypted)
+    }))
   } catch {
     return []
   }
@@ -1020,22 +1020,7 @@ async function handleExportCsv(
 
   if (result.canceled || !result.filePath) return false
 
-  const headers = Object.keys(data[0])
-  const csvContent = [
-    headers.join(','),
-    ...data.map(row =>
-      headers.map(h => {
-        const val = row[h]
-        if (val === null || val === undefined) return ''
-        const str = String(val)
-        return str.includes(',') || str.includes('"') || str.includes('\n')
-          ? `"${str.replace(/"/g, '""')}"`
-          : str
-      }).join(',')
-    )
-  ].join('\n')
-
-  writeFileSync(result.filePath, csvContent, 'utf-8')
+  writeFileSync(result.filePath, buildCsv(data), 'utf-8')
   return true
 }
 
@@ -1057,27 +1042,6 @@ async function handleExportXml(
 
   if (result.canceled || !result.filePath) return false
 
-  const headers = Object.keys(data[0])
-  const xmlContent = [
-    '<?xml version="1.0" encoding="UTF-8"?>',
-    '<snmpResults>',
-    ...data.map(row => [
-      '  <result>',
-      ...headers.map(h => `    <${h}>${escapeXml(String(row[h] ?? ''))}</${h}>`),
-      '  </result>'
-    ].join('\n')),
-    '</snmpResults>'
-  ].join('\n')
-
-  writeFileSync(result.filePath, xmlContent, 'utf-8')
+  writeFileSync(result.filePath, buildXml(data), 'utf-8')
   return true
-}
-
-function escapeXml(str: string): string {
-  return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;')
 }
