@@ -120,6 +120,40 @@ try {
 
 ---
 
+## Constraint: `buildResultSession` Subtree Filtering Is Opt-In and Defaults OFF
+
+`buildResultSession(op, rootOid, result, mibTree, options?)` accepts `options.filterToSubtree` (default `false`). When `true`, non-WALK varbinds outside `rootOid`'s subtree are dropped via the segment-boundary `filterVarbindsToSubtree` helper (`src/renderer/src/utils/resultColumns.ts`). **The default MUST stay `false`** — only the MIB-tree table/entry fan-out may opt in.
+
+### Signature
+
+```typescript
+interface BuildResultSessionOptions { filterToSubtree?: boolean }
+function buildResultSession(
+  op: SnmpOperation, rootOid: string, result: SnmpResult, mibTree: MibTreeNodeData[],
+  options?: BuildResultSessionOptions
+): ResultSession
+```
+
+### Call-site contract (audit EVERY call site when you touch this)
+
+| Call site | `filterToSubtree` | Why |
+|---|---|---|
+| `MibTreePanel` GETBULK table/entry fan-out (both the abort-fallback and final write) | `true` | Every fanned-out column OID is a genuine descendant of the clicked node — filtering trims cross-subtree noise from over-eager agents. |
+| `QueryPanel.handleSend` (manual GET/GETBULK/SET) | `false` (default) | The user typed arbitrary OIDs; filtering to `oids[0]`'s subtree would silently drop the others. |
+| `SetToolWindowContent` multi-row GET / SET | `false` (default) | **Regression guard.** Rows target independent OIDs in sibling subtrees; `rootOid` is only `oids[0]` / `values[0].oid`. Filtering here drops every row not under the first — the exact bug this contract prevents. |
+
+### Why
+
+`buildResultSession` receives a single `rootOid`, but several callers pass multi-OID results whose OIDs are NOT all descendants of that root (manual multi-OID queries, multi-node SET/GET tool windows). A blanket subtree filter inside `buildResultSession` silently discards the legitimate rows. Filtering is only correct when the caller guarantees every result OID lives under `rootOid` — i.e. the tree fan-out. Subtree matching itself must respect OID segment boundaries (see [backend/snmp-guidelines.md](../backend/snmp-guidelines.md) Constraint 1), never raw `startsWith`.
+
+### How to Apply
+
+- Adding a new `buildResultSession` caller: leave `filterToSubtree` unset unless you can prove every result OID is a descendant of `rootOid`.
+- Never move the filter back inside `buildResultSession` as an unconditional step.
+- `filterVarbindsToSubtree` is the only filter producer; it reuses `isOidWithinPrefix` + `normalizeOid` and must stay unit-tested with a sibling-boundary case (`1.3.6.1.2.1.10.x` must NOT match root `1.3.6.1.2.1.1`) and the multi-subtree keep-all regression case.
+
+---
+
 ## Constraint: Streaming Display Must Not Be Gated Behind `!isQuerying`
 
 WALK / BULK_WALK results stream into `currentResult.varbinds` incrementally via `appStore.appendResultVarbinds` (driven by `snmp:walk-progress` IPC events). The presentation layer must render those rows **as they arrive**, not after the final `setIsQuerying(false)` lands. Any conditional that hides the row container while `isQuerying === true` defeats the entire streaming pipeline — the data is in the store, but the user only sees it appear in one batch at the end.
