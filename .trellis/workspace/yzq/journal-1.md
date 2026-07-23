@@ -1539,3 +1539,39 @@ Added fixed Windows and macOS packaging scripts, configured domestic Electron/el
 ### Next Steps
 
 - None - task complete
+
+
+## Session 42: Port legacy SNMP correctness fixes (R1-R11) across 3 PRs
+
+**Date**: 2026-07-23
+**Task**: Port legacy SNMP correctness fixes (R1-R11) across 3 PRs
+**Branch**: `main`
+
+### Summary
+
+Ported 11 correctness fixes from the legacy project onto the refactored architecture, split into 3 independently-verified PRs. PR1 (R1-R7): SET numeric conversion/validation before session open, XML tag sanitize + CSV BOM/formula neutralization, safeStorage profile password encryption with plaintext-degrade + legacy back-compat, shared TextEncoder hex util, removed fabricated OID fallback + dead mib:search chain, empty-object guards. PR2 (R8-R9): buildResultSession filterToSubtree opt-in default OFF (fixes multi-node SET/GET dropping sibling-subtree rows), symbolic name->OID resolution in QueryPanel with warn+abort. PR3 (R10-R11): WALK termination guards (segment-wise compareOids monotonic guard, WALK_MAX_ROWS cap, v1 NoSuchName normal end, additive SnmpResult.warning) preserving abort/streaming/session-leak invariants; parser same-module parent resolution + multi-segment OID parsing. Each PR: trellis-implement + trellis-check, typecheck/lint/vitest green (final 22 files/169 tests). Legacy sources were unavailable on this machine, so helpers were reimplemented from PRD semantics. Spec updated: snmp-guidelines Constraint 8 + mib-tree-snmp-ops filterToSubtree contract. Known follow-up: SnmpResult.warning has no renderer consumer yet (walk-guard warnings not surfaced in UI).
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `9b53064` | (see git log) |
+| `03cf2bc` | (see git log) |
+| `411b9c9` | (see git log) |
+| `a9372d4` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
