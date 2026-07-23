@@ -12,7 +12,7 @@ import { debugError, debugLog } from '../debugLogger'
  * or looping OID sequence. When hit, the walk terminates with `success: true`
  * and a `warning`, keeping every row gathered up to the cap.
  */
-const WALK_MAX_ROWS = 50000
+const WALK_MAX_ROWS = 20000
 
 /**
  * Raw varbind shape returned by net-snmp before formatting.

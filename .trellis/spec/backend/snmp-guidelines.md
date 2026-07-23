@@ -392,7 +392,7 @@ export function isNoSuchNameEnd(error: unknown): boolean     // SNMPv1 status ==
 export const SNMP_NO_SUCH_NAME_STATUS = 2
 
 // src/main/snmp/client.ts
-const WALK_MAX_ROWS = 50000
+const WALK_MAX_ROWS = 20000
 ```
 
 ### The three guards (both walk functions)
@@ -400,7 +400,7 @@ const WALK_MAX_ROWS = 50000
 | Guard | Check (before push) | On trip |
 |---|---|---|
 | (a) Monotonic OID | `compareOids(stripLeadingDot(vb.oid), lastPushedOid) <= 0` | `finish(session, { success: true, warning: 'non-increasing OID…', varbinds: results })` |
-| (b) Row cap | `results.length >= WALK_MAX_ROWS` | `finish(session, { success: true, warning: 'reached the 50000-row limit', varbinds: results })` |
+| (b) Row cap | `results.length >= WALK_MAX_ROWS` | `finish(session, { success: true, warning: 'reached the 20000-row limit', varbinds: results })` |
 | (c) v1 NoSuchName end | `isNoSuchNameEnd(error)` in the `if (error)` branch | resolve `success: true` with collected rows — NOT an error |
 
 `lastPushedOid` is a per-Promise closure variable (`let lastPushedOid: string | null = null`) persisted ACROSS callbacks, updated only in the push branch (like BULK_WALK's `lastOid`).
