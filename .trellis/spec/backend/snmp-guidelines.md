@@ -387,7 +387,6 @@ webContents.send('trap:event', formatTrapNotification(trap, {
 
 ```typescript
 // src/main/snmp/oid.ts — pure, net-snmp-free, unit-tested
-export function compareOids(a: string, b: string): number   // segment-wise NUMERIC compare, dot-normalized
 export function isNoSuchNameEnd(error: unknown): boolean     // SNMPv1 status === 2 (RFC 1157 noSuchName)
 export const SNMP_NO_SUCH_NAME_STATUS = 2
 
@@ -399,45 +398,49 @@ const WALK_MAX_ROWS = 20000
 
 | Guard | Check (before push) | On trip |
 |---|---|---|
-| (a) Monotonic OID | `compareOids(stripLeadingDot(vb.oid), lastPushedOid) <= 0` | `finish(session, { success: true, warning: 'non-increasing OID…', varbinds: results })` |
+| (a) Revisited-OID loop | `seenOids.has(stripLeadingDot(vb.oid))` | `finish(session, { success: true, warning: 'agent looped on OID…', varbinds: results })` |
 | (b) Row cap | `results.length >= WALK_MAX_ROWS` | `finish(session, { success: true, warning: 'reached the 20000-row limit', varbinds: results })` |
 | (c) v1 NoSuchName end | `isNoSuchNameEnd(error)` in the `if (error)` branch | resolve `success: true` with collected rows — NOT an error |
 
-`lastPushedOid` is a per-Promise closure variable (`let lastPushedOid: string | null = null`) persisted ACROSS callbacks, updated only in the push branch (like BULK_WALK's `lastOid`).
+`seenOids` is a per-Promise closure `Set<string>` (`const seenOids = new Set<string>()`) persisted ACROSS callbacks, holding every dot-stripped OID already pushed. It is added to only in the push branch (same slot BULK_WALK's `lastOid` continuation seed lives in).
 
 ### Why
 
-- `compareOids` MUST be segment-wise numeric, not string-lexical: `1.3.6.1.2.1.9` < `1.3.6.1.2.1.10` is true numerically but false lexically. A lexical comparator would falsely trip guard (a) on legitimate walks and fail to catch real non-increasing loops. This is the same segment-boundary hazard as Constraint 1.
-- A non-increasing (buggy or malicious) agent otherwise loops forever; guard (a) is the hard stop. Guard (b) bounds memory on pathologically large tables. Guard (c): SNMPv1 signals end-of-MIB with a `noSuchName` error status, not `endOfMibView` — treating it as an error would surface a spurious failure at the natural end of every v1 walk.
-- `warning` is **additive and optional** on `SnmpResult` (`success` stays `true`), exactly like `aborted` (Constraint 4). It crosses the preload boundary typed and is spread through `finalizeWalkResult` in `handlers.ts`; see [frontend/type-safety.md](../frontend/type-safety.md).
+- Guard (a) MUST key on a genuine **repeat**, not on OID ordering. A walk terminates naturally by leaving the subtree (Constraint 3); the only real infinite-loop risk is an agent that RE-RETURNS an OID it already gave us. Real agents legitimately return rows in non-lexicographic order — e.g. an `OCTET STRING`-indexed table walked in name/insertion order returns instances whose length-prefix sub-identifier goes `9` (`loopback1`) → `7` (`client1`), i.e. numerically DECREASING but all-distinct. A monotonic-increasing guard falsely trips on the SECOND such row and returns exactly one result. (Observed on iTN221 device `172.16.67.180`, table `1.3.6.1.4.1.8886.1.82.1.1.1.3`, 81 rows collapsing to 1.)
+- The `seenOids` set still catches every true cycle (same OID forever, or A→B→A) on the first repeat. Guard (b) bounds memory on pathologically large or ever-new-OID tables (the set is bounded by `WALK_MAX_ROWS` too). Guard (c): SNMPv1 signals end-of-MIB with a `noSuchName` error status, not `endOfMibView` — treating it as an error would surface a spurious failure at the natural end of every v1 walk.
+- `warning` is **additive and optional** on `SnmpResult` (`success` stays `true`), exactly like `aborted` (Constraint 4). It crosses the preload boundary typed and is spread through `finalizeWalkResult` in `handlers.ts`, and the renderer (QueryPanel / MibTreePanel success branches) surfaces it via `message.warning` + status line so a guarded early stop is never silent; see [frontend/type-safety.md](../frontend/type-safety.md).
 
 ### How to Apply
 
-- Guard ordering per varbind: abort check (Constraint 4, still FIRST) → error/NoSuchName → subtree boundary (Constraint 3) → row-cap (b) → monotonic (a) → push. Do not reorder; an abort must never be reinterpreted as a guard stop.
+- Guard ordering per varbind: abort check (Constraint 4, still FIRST) → error/NoSuchName → subtree boundary (Constraint 3) → row-cap (b) → revisited-OID loop (a) → push. Do not reorder; an abort must never be reinterpreted as a guard stop.
 - Every guarded exit routes through `finish(session, result)` — never `resolve` directly. In `snmpBulkWalk` use the existing `break`-with-flag pattern so `onProgress(results.slice(pushedBefore))` still fires BEFORE `finish()`; a guard must not drop already-collected-but-unstreamed rows.
-- Keep `compareOids` / `isNoSuchNameEnd` in `oid.ts` as pure functions (no `net-snmp` import) so they stay unit-testable.
+- Do NOT reintroduce an OID comparator for guard (a): non-lexicographic order is legitimate, so ordering carries no signal. Keep `isNoSuchNameEnd` in `oid.ts` as a pure function (no `net-snmp` import) so it stays unit-testable.
 
 ### Tests Required
 
-- `compareOids`: numeric-not-lexical ordering (`…9` vs `…10`), prefix-shorter-sorts-first, dot normalization, equal → `0`, decreasing → negative.
-- Guard behavior: a non-increasing sequence terminates `success: true` with `warning`; a v1 `noSuchName` error resolves `success: true` with collected rows.
+- Non-lexicographic table (decreasing length-prefix, all-distinct) walks FULLY: `snmpWalk` and `snmpBulkWalk` return every row, `warning` undefined.
+- Genuine loop (an OID returned twice) terminates `success: true` with a loop `warning`, keeping rows collected before the repeat.
+- A v1 `noSuchName` error resolves `success: true` with collected rows.
 
 ### Wrong vs Correct
 
 #### Wrong
 
 ```typescript
-if (vb.oid <= lastPushedOid) return          // string compare: trips on 9 vs 10
+// WRONG: use OID ordering as the loop signal
+if (nextOid <= lastPushedOid) return          // trips on a legit non-lexicographic table (len 9 → 7) → returns 1 row
 results.push(vb); resolve({ success: false }) // NoSuchName surfaced as failure; bypasses finish()
 ```
 
 #### Correct
 
 ```typescript
-if (compareOids(stripLeadingDot(vb.oid), lastPushedOid) <= 0) {
-  finish(session, { success: true, warning: 'Walk stopped: non-increasing OID', varbinds: results })
+const normalizedOid = stripLeadingDot(vb.oid)
+if (seenOids.has(normalizedOid)) {
+  finish(session, { success: true, warning: `Walk stopped: agent looped on OID ${normalizedOid}.`, varbinds: results })
   return
 }
+results.push(formatVarbindValue(vb)); seenOids.add(normalizedOid)
 // error branch:
 if (isNoSuchNameEnd(error)) { finish(session, { success: true, varbinds: results }); return }
 ```
@@ -447,7 +450,7 @@ if (isNoSuchNameEnd(error)) { finish(session, { success: true, varbinds: results
 ## Cross-References
 
 - `src/main/snmp/client.ts` — canonical implementations of `oidInSubtree`, `stripLeadingDot`, `formatVarbindValue`, `snmpWalk`, `snmpBulkWalk`, `snmpGetBulk`, `flattenBulkVarbinds`, `cancelCurrentSnmpOperation`, the `WALK_MAX_ROWS` cap, and the `finish(session, result)` pattern in all six SNMP entry points.
-- `src/main/snmp/oid.ts` — pure, net-snmp-free `compareOids` (segment-wise numeric OID compare), `isStrictlyIncreasing`, `isNoSuchNameEnd` for the Constraint 8 walk-termination guards.
+- `src/main/snmp/oid.ts` — pure, net-snmp-free `isNoSuchNameEnd` (SNMPv1 `noSuchName` end-of-MIB detection) for the Constraint 8 walk-termination guards. The revisited-OID loop guard (a) lives in `client.ts` as a per-Promise `seenOids` set and needs no OID comparator.
 - `src/main/mib/parser.ts` — `parseOidDef` (regex `^(\S+)((?:\s+\d+)+)$`, returns `childNumbers: number[]` so `::= { enterprises 1 2 }` parses) and `resolveParent`, which prefers a parent defined in the SAME module (`${module}::${name}`) before a cross-module by-name fallback. Both the first pass and the resolved-OID-requiring fixpoint second pass in `buildRelationships` route through `resolveParent`; this fixes cross-module same-named parents mis-attaching to the first definition seen.
 - `src/main/snmp/trapReceiver.ts` — Trap / Inform receiver singleton, event formatting, receiver status, fatal error classification, and SNMPv3 authorizer setup.
 - `src/main/snmp/options.ts` — main-process mapping from supported SNMP option keys to `net-snmp` constants, with explicit unsupported-option errors.

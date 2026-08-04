@@ -164,17 +164,25 @@ export function QueryPanel(): React.ReactElement {
           setConnectionStatus('connected')
           const finalCount = currentSession?.varbinds.length ?? 0
           const baseMsg = `${queryOperation}: ${finalCount} result(s), ${result.responseTime}ms`
-          setStatusMessage(
-            finalCount === 0 ? `${baseMsg} — 本次操作结果为空` : baseMsg
-          )
+          const msg = finalCount === 0 ? `${baseMsg} — 本次操作结果为空` : baseMsg
+          if (result.warning) {
+            message.warning(result.warning)
+            setStatusMessage(`${msg} — ${result.warning}`)
+          } else {
+            setStatusMessage(msg)
+          }
         } else {
           setConnectionStatus('connected')
           const session = buildResultSession(queryOperation, oids[0] ?? '', result, mibTree)
           setResult(session)
           const baseMsg = `${queryOperation}: ${session.varbinds.length} result(s), ${result.responseTime}ms`
-          setStatusMessage(
-            session.varbinds.length === 0 ? `${baseMsg} — 本次操作结果为空` : baseMsg
-          )
+          const msg = session.varbinds.length === 0 ? `${baseMsg} — 本次操作结果为空` : baseMsg
+          if (result.warning) {
+            message.warning(result.warning)
+            setStatusMessage(`${msg} — ${result.warning}`)
+          } else {
+            setStatusMessage(msg)
+          }
         }
       } else {
         setConnectionStatus('error')

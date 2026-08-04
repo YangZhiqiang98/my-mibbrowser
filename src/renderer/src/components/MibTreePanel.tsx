@@ -549,9 +549,13 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
           setConnectionStatus('connected')
           const finalCount = currentSession?.varbinds.length ?? 0
           const baseMsg = `${operation}: ${finalCount} result(s), ${result.responseTime}ms`
-          setStatusMessage(
-            finalCount === 0 ? `${baseMsg} — 本次操作结果为空` : baseMsg
-          )
+          const msg = finalCount === 0 ? `${baseMsg} — 本次操作结果为空` : baseMsg
+          if (result.warning) {
+            message.warning(result.warning)
+            setStatusMessage(`${msg} — ${result.warning}`)
+          } else {
+            setStatusMessage(msg)
+          }
         } else {
           setConnectionStatus('connected')
           // GETBULK table/entry fan-out targets a single subtree; drop overflow
@@ -563,9 +567,13 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
           // PR3 — append "本次操作结果为空" when the response carried zero rows so
           // the status bar / message line surfaces the empty case without a popup.
           const baseMsg = `${operation}: ${session.varbinds.length} result(s), ${result.responseTime}ms`
-          setStatusMessage(
-            session.varbinds.length === 0 ? `${baseMsg} — 本次操作结果为空` : baseMsg
-          )
+          const msg = session.varbinds.length === 0 ? `${baseMsg} — 本次操作结果为空` : baseMsg
+          if (result.warning) {
+            message.warning(result.warning)
+            setStatusMessage(`${msg} — ${result.warning}`)
+          } else {
+            setStatusMessage(msg)
+          }
         }
       } else {
         setConnectionStatus('error')

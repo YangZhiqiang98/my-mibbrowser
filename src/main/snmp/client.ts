@@ -3,7 +3,7 @@ import snmp from 'net-snmp'
 import type { SnmpConfig, SnmpResult, SnmpVarbind, SnmpSetValue, SecurityLevel } from './types'
 import { resolveAuthProtocol, resolvePrivProtocol, resolveSnmpTransport } from './options'
 import { prepareSetVarbinds } from './setValues'
-import { compareOids, isNoSuchNameEnd } from './oid'
+import { isNoSuchNameEnd } from './oid'
 import { debugError, debugLog } from '../debugLogger'
 
 /**
@@ -682,10 +682,12 @@ export function snmpWalk(config: SnmpConfig, rootOid: string, options?: WalkOpti
     const startTime = Date.now()
     const results: SnmpVarbind[] = []
     let settled = false
-    // Tracks the last OID pushed into `results` ACROSS callbacks so the
-    // monotonic-increasing guard can detect a looping / non-increasing agent
-    // even when each getNext delivers a single varbind per callback.
-    let lastPushedOid: string | null = null
+    // Tracks every OID pushed into `results` ACROSS callbacks so the loop guard
+    // can detect an agent that cycles (returns an OID already collected) even
+    // when each getNext delivers a single varbind per callback. Non-increasing
+    // but DISTINCT OIDs are legitimate — e.g. string-indexed tables returned in
+    // name/insertion order — and must NOT terminate the walk.
+    const seenOids = new Set<string>()
     const onProgress = options?.onProgress
     logSnmpStart('WALK', config, { rootOid })
 
@@ -803,15 +805,16 @@ export function snmpWalk(config: SnmpConfig, rootOid: string, options?: WalkOpti
           return
         }
 
-        // Monotonic-increasing guard: a well-behaved agent always returns an
-        // OID strictly greater than the previous one. If it does not, the walk
-        // would loop forever — terminate with a warning instead.
+        // Loop guard: a walk terminates naturally by leaving the subtree, so the
+        // only real infinite-loop risk is an agent that RE-RETURNS an OID it has
+        // already given us. Stop on a genuine repeat — not on a merely smaller
+        // OID, which is legitimate for name-ordered / string-indexed tables.
         const normalizedOid = stripLeadingDot(vb.oid)
-        if (lastPushedOid !== null && compareOids(normalizedOid, lastPushedOid) <= 0) {
+        if (seenOids.has(normalizedOid)) {
           finish(session, {
             success: true,
             varbinds: results,
-            warning: `Walk stopped: agent returned a non-increasing OID (${normalizedOid}).`,
+            warning: `Walk stopped: agent looped on OID ${normalizedOid}.`,
             responseTime: Date.now() - startTime,
             timestamp: Date.now()
           })
@@ -819,7 +822,7 @@ export function snmpWalk(config: SnmpConfig, rootOid: string, options?: WalkOpti
         }
 
         results.push(formatVarbindValue(vb))
-        lastPushedOid = normalizedOid
+        seenOids.add(normalizedOid)
       }
 
       // Notify progress listeners with the varbinds pushed in this callback.
@@ -882,9 +885,9 @@ export function snmpBulkWalk(
     const startTime = Date.now()
     const results: SnmpVarbind[] = []
     let settled = false
-    // See snmpWalk: tracks the last pushed OID across callbacks for the
-    // monotonic-increasing loop guard.
-    let lastPushedOid: string | null = null
+    // See snmpWalk: tracks pushed OIDs across callbacks so the loop guard can
+    // detect a genuine cycle. Non-increasing but distinct OIDs are legitimate.
+    const seenOids = new Set<string>()
     const effectiveMaxRepetitions = maxRepetitions ?? config.bulkMaxRepetitions
     const onProgress = options?.onProgress
     logSnmpStart('BULK_WALK', config, {
@@ -987,17 +990,18 @@ export function snmpBulkWalk(
           break
         }
 
-        // Monotonic-increasing guard — stop a looping / non-increasing agent.
+        // Loop guard — stop only on a genuine cycle (an OID already collected),
+        // not on a merely-decreasing OID (legitimate for name-ordered tables).
         const normalizedOid = stripLeadingDot(vb.oid)
-        if (lastPushedOid !== null && compareOids(normalizedOid, lastPushedOid) <= 0) {
-          warning = `Walk stopped: agent returned a non-increasing OID (${normalizedOid}).`
+        if (seenOids.has(normalizedOid)) {
+          warning = `Walk stopped: agent looped on OID ${normalizedOid}.`
           hitEndOfMib = true
           break
         }
 
         results.push(formatVarbindValue(vb))
         lastOid = vb.oid
-        lastPushedOid = normalizedOid
+        seenOids.add(normalizedOid)
       }
 
       if (onProgress && results.length > pushedBefore) {
