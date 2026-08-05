@@ -96,4 +96,14 @@ describe('buildMibTreeIndex', () => {
     expect(index.search('  IFADMINSTATUS  ').matchIds).toEqual([ifAdminStatus.id])
     expect(index.search('   ')).toEqual({ matchIds: [], ancestorIds: [] })
   })
+
+  it('supports case-sensitive search when requested', () => {
+    const index = buildMibTreeIndex(tree)
+
+    // Case-insensitive (default) matches regardless of casing.
+    expect(index.search('IFADMIN', false).matchIds).toEqual([ifAdminStatus.id])
+    // Case-sensitive matches only the exact casing.
+    expect(index.search('IFADMIN', true).matchIds).toEqual([])
+    expect(index.search('ifAdmin', true).matchIds).toEqual([ifAdminStatus.id])
+  })
 })

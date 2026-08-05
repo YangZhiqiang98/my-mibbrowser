@@ -124,8 +124,56 @@ html, body, #root {
   gap: 4px;
 }
 
-.mib-tree-search {
-  padding: 0 12px;
+.mib-tree-content-outer {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.mib-tree-find-bar {
+  position: fixed;
+  left: 50%;
+  top: 15%;
+  transform: translate(-50%, -50%);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 6px 5px 8px;
+  background: #fff;
+  border: 1px solid #d9d9d9;
+  border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.22);
+}
+
+.mib-tree-find-grip {
+  color: #8c8c8c;
+  font-size: 15px;
+  cursor: move;
+  padding: 4px 3px;
+  flex: none;
+}
+
+.mib-tree-find-input {
+  width: 260px;
+  font-size: 14px;
+}
+
+.mib-tree-find-count {
+  min-width: 52px;
+  text-align: right;
+  font-size: 12px;
+  color: #8c8c8c;
+  padding: 0 4px;
+  white-space: nowrap;
+}
+
+.mib-tree-find-case {
+  min-width: 32px;
+  font-weight: 600;
+  font-size: 12px;
 }
 
 .mib-tree-content {

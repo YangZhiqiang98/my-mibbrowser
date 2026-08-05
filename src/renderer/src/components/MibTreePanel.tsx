@@ -3,6 +3,9 @@ import { Input, Button, Tooltip, message, Tree, Dropdown, Tag, App, Modal, Switc
 import type { MenuProps, TreeProps } from 'antd'
 import {
   SearchOutlined,
+  UpOutlined,
+  DownOutlined,
+  CloseOutlined,
   FolderOpenOutlined,
   FolderAddOutlined,
   FileOutlined,
@@ -29,6 +32,7 @@ import type { MibTreeNodeData } from '../types'
 import type { SnmpResult } from '../../../main/snmp/types'
 import { buildTreeFromNodes } from '../utils/mibTreeUtils'
 import { buildMibTreeIndex } from '../utils/mibTreeIndex'
+import { stepIndex, mergeExpandedKeys } from '../utils/findNavigation'
 import { createMibTreeDataNodeBuilder } from '../utils/mibTreeDataNodes'
 import { toSlimToolWindowMibNode, toToolWindowMibSubtree } from '../utils/toolWindowMibContext'
 import { buildResultSession, initResolveContext, resolveVarbind } from '../utils/resultColumns'
@@ -44,6 +48,9 @@ const ACCESS_COLOR_MAP: Record<string, string> = {
   'not-accessible': 'default',
   'accessible-for-notify': 'purple'
 }
+
+/** Stable empty set so an inactive find bar never re-triggers tree rebuilds. */
+const EMPTY_MATCH_SET: ReadonlySet<string> = new Set()
 
 interface MibTreePanelProps {
   width: number
@@ -75,6 +82,9 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
   const appendResultVarbinds = useAppStore((s) => s.appendResultVarbinds)
 
   const [searchText, setSearchText] = useState('')
+  const [isFindOpen, setIsFindOpen] = useState(false)
+  const [caseSensitive, setCaseSensitive] = useState(false)
+  const [findPos, setFindPos] = useState<{ x: number; y: number } | null>(null)
   const [expandedKeys, setExpandedKeys] = useState<string[]>([])
   const [isDragOver, setIsDragOver] = useState(false)
   const [searchMatchIds, setSearchMatchIds] = useState<string[]>([])
@@ -87,6 +97,9 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
   const [isCacheDirectoriesLoading, setIsCacheDirectoriesLoading] = useState(false)
   const [cacheDirectoryBusyId, setCacheDirectoryBusyId] = useState<string | null>(null)
   const treeRef = useRef<{ scrollTo: (info: { key: string }) => void } | null>(null)
+  const findInputRef = useRef<{ focus: () => void; select?: () => void } | null>(null)
+  const findBarRef = useRef<HTMLDivElement | null>(null)
+  const findDragRef = useRef<{ startX: number; startY: number; baseX: number; baseY: number } | null>(null)
   const isDetailDragging = useRef(false)
   const detailStartY = useRef(0)
   const detailStartHeight = useRef(0)
@@ -94,37 +107,31 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
   const dataNodeBuilder = useMemo(() => createMibTreeDataNodeBuilder(), [])
   const treeIndex = useMemo(() => buildMibTreeIndex(mibTree), [mibTree])
 
-  // Perform MIB tree search: find matching nodes, expand ancestors, and select first match
+  // Compute matches only. Expansion, scroll, and selection of the CURRENT match
+  // are owned by the currentMatchIndex effect below, so a broad query never
+  // expands the whole tree (the old perf bug expanded every match's ancestors).
   const performSearch = useCallback((query: string) => {
-    const searchResult = treeIndex.search(query)
-    if (searchResult.matchIds.length === 0) {
-      setSearchMatchIds([])
-      setCurrentMatchIndex(0)
-      return
-    }
-
-    setSearchMatchIds(searchResult.matchIds)
+    const { matchIds } = treeIndex.search(query, caseSensitive)
+    setSearchMatchIds(matchIds)
     setCurrentMatchIndex(0)
+  }, [treeIndex, caseSensitive])
 
-    // Expand ancestors of all matches and auto-select the first match
-    setExpandedKeys(prev => [...new Set([...prev, ...searchResult.ancestorIds])])
-    const firstMatch = treeIndex.nodeById.get(searchResult.matchIds[0])
-    if (firstMatch) {
-      setSelectedNode(firstMatch)
-      setQueryOid(firstMatch.oid)
-    }
-  }, [treeIndex, setSelectedNode, setQueryOid])
-
-  // Scroll to current match when cycling through results
+  // Expand, select, and scroll to the CURRENT match only — never all matches.
   useEffect(() => {
     if (searchMatchIds.length === 0) return
     const matchId = searchMatchIds[currentMatchIndex]
     if (!matchId) return
 
-    // Expand ancestors of the current match
+    const node = treeIndex.nodeById.get(matchId)
+    if (node) {
+      setSelectedNode(node)
+      setQueryOid(node.oid)
+    }
+
+    // Expand ancestors of the current match (only this match's path)
     const ancestors = treeIndex.getAncestorIds(matchId)
     if (ancestors.length > 0) {
-      setExpandedKeys(prev => [...new Set([...prev, ...ancestors])])
+      setExpandedKeys(prev => mergeExpandedKeys(prev, ancestors))
     }
 
     // Scroll to the match node after a delay to let tree expand and render
@@ -145,7 +152,7 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
       }
     }, 150)
     return () => clearTimeout(timerId)
-  }, [currentMatchIndex, searchMatchIds, treeIndex])
+  }, [currentMatchIndex, searchMatchIds, treeIndex, setSelectedNode, setQueryOid])
 
   // Vertical resize handle for node detail panel
   useEffect(() => {
@@ -173,36 +180,114 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
     e.preventDefault()
   }, [detailHeight])
 
-  // Handle Enter key: trigger search on first press, cycle matches on subsequent presses
-  const handleSearchKeyDown = useCallback((e: React.KeyboardEvent) => {
+  const closeFind = useCallback(() => {
+    setIsFindOpen(false)
+    setSearchText('')
+    setSearchMatchIds([])
+    setCurrentMatchIndex(0)
+    setFindPos(null)
+  }, [])
+
+  const handleFindDragStart = useCallback((e: React.MouseEvent) => {
+    const bar = findBarRef.current
+    if (!bar) return
+    const rect = bar.getBoundingClientRect()
+    findDragRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      baseX: rect.left,
+      baseY: rect.top
+    }
+    setFindPos({ x: rect.left, y: rect.top })
+    e.preventDefault()
+  }, [])
+
+  // Drag the floating find bar anywhere in the app (clamped to the viewport).
+  useEffect(() => {
+    const onMove = (e: MouseEvent): void => {
+      const drag = findDragRef.current
+      const bar = findBarRef.current
+      if (!drag || !bar) return
+      let nx = drag.baseX + (e.clientX - drag.startX)
+      let ny = drag.baseY + (e.clientY - drag.startY)
+      nx = Math.min(Math.max(0, nx), Math.max(0, window.innerWidth - bar.offsetWidth))
+      ny = Math.min(Math.max(0, ny), Math.max(0, window.innerHeight - bar.offsetHeight))
+      setFindPos({ x: nx, y: ny })
+    }
+    const onUp = (): void => { findDragRef.current = null }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+    return () => {
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+    }
+  }, [])
+
+  // ArrowDown/Enter = next, ArrowUp/Shift+Enter = previous, Esc = close.
+  // Search is type-ahead (debounced), so Enter with no matches re-runs it.
+  const handleFindKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      closeFind()
+      return
+    }
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault()
+      if (searchMatchIds.length === 0) return
+      setCurrentMatchIndex(prev => stepIndex(prev, searchMatchIds.length, e.key === 'ArrowUp' ? -1 : 1))
+      return
+    }
     if (e.key === 'Enter') {
       e.preventDefault()
       if (searchMatchIds.length === 0) {
-        // No matches yet — perform initial search
         performSearch(searchText)
-      } else if (e.shiftKey) {
-        // Previous match
-        setCurrentMatchIndex(prev => (prev - 1 + searchMatchIds.length) % searchMatchIds.length)
-      } else {
-        // Next match
-        setCurrentMatchIndex(prev => (prev + 1) % searchMatchIds.length)
+        return
+      }
+      setCurrentMatchIndex(prev => stepIndex(prev, searchMatchIds.length, e.shiftKey ? -1 : 1))
+    }
+  }, [searchText, searchMatchIds.length, performSearch, closeFind])
+
+  // Ctrl/Cmd+F opens the floating find bar and focuses it. This is the tree
+  // panel's primary find, so the shortcut is global.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'f' || e.key === 'F')) {
+        e.preventDefault()
+        setIsFindOpen(true)
+        requestAnimationFrame(() => {
+          findInputRef.current?.focus()
+          findInputRef.current?.select?.()
+        })
       }
     }
-  }, [searchText, searchMatchIds.length, performSearch])
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
+
+  // Type-ahead: debounce the query while the bar is open.
+  useEffect(() => {
+    if (!isFindOpen) return
+    const query = searchText
+    const timerId = setTimeout(() => performSearch(query), 180)
+    return () => clearTimeout(timerId)
+  }, [searchText, isFindOpen, performSearch])
 
   const handleNodeTitleDoubleClick = useCallback((oid: string): void => {
     setQueryOid(oid)
   }, [setQueryOid])
 
-  // Always display the full mibTree, reusing DataNode objects for unchanged branches.
-  const searchMatchSet = useMemo(() => new Set(searchMatchIds), [searchMatchIds])
+  // The current match is shown via selection + scroll (the currentMatchIndex
+  // effect selects it), so the tree data never depends on the search. It is
+  // built once per mibTree and stays referentially stable across navigation,
+  // so stepping matches only changes antd's selectedKeys / expandedKeys — no
+  // whole-tree rebuild, which is what made navigation janky.
   const filteredTreeData = useMemo(() => {
     return dataNodeBuilder.build(mibTree, {
-      searchMatchIds: searchMatchSet,
+      searchMatchIds: EMPTY_MATCH_SET,
       getNodeIcon,
       onNodeDoubleClick: handleNodeTitleDoubleClick
     })
-  }, [dataNodeBuilder, mibTree, searchMatchSet, handleNodeTitleDoubleClick])
+  }, [dataNodeBuilder, mibTree, handleNodeTitleDoubleClick])
 
   // Clean up stale expandedKeys when tree data changes
   useEffect(() => {
@@ -892,22 +977,68 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
         </div>
       </div>
 
-      <div className="mib-tree-search">
-        <Input
-          placeholder="Search by name or OID (Enter=next, Shift+Enter=prev)"
-          prefix={<SearchOutlined />}
-          value={searchText}
-          onChange={(e) => setSearchText(e.target.value)}
-          onKeyDown={handleSearchKeyDown}
-          size="small"
-          allowClear
-        />
-        {searchMatchIds.length > 0 && (
-          <span style={{ fontSize: 11, color: '#666', marginTop: 2, display: 'block' }}>
-            {currentMatchIndex + 1} / {searchMatchIds.length} matches
-          </span>
+      <div className="mib-tree-content-outer">
+        {isFindOpen && (
+          <div
+            className="mib-tree-find-bar"
+            ref={findBarRef}
+            style={findPos ? { left: findPos.x, top: findPos.y, right: 'auto', transform: 'none' } : undefined}
+          >
+            <SearchOutlined
+              className="mib-tree-find-grip"
+              onMouseDown={handleFindDragStart}
+              title="拖动移动查找框"
+            />
+            <Input
+              ref={findInputRef as never}
+              className="mib-tree-find-input"
+              placeholder="Name or OID"
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+              onKeyDown={handleFindKeyDown}
+              variant="borderless"
+              autoFocus
+            />
+            <span className="mib-tree-find-count">
+              {searchMatchIds.length > 0
+                ? `${currentMatchIndex + 1}/${searchMatchIds.length}`
+                : (searchText.trim() ? 'no matches' : '')}
+            </span>
+            <Tooltip title="区分大小写 (Match Case)">
+              <Button
+                className="mib-tree-find-case"
+                type={caseSensitive ? 'primary' : 'text'}
+                size="small"
+                onClick={() => setCaseSensitive(v => !v)}
+              >
+                Aa
+              </Button>
+            </Tooltip>
+            <Button
+              type="text"
+              size="small"
+              icon={<UpOutlined />}
+              disabled={searchMatchIds.length === 0}
+              onClick={() => setCurrentMatchIndex(prev => stepIndex(prev, searchMatchIds.length, -1))}
+              title="Previous (↑ / Shift+Enter)"
+            />
+            <Button
+              type="text"
+              size="small"
+              icon={<DownOutlined />}
+              disabled={searchMatchIds.length === 0}
+              onClick={() => setCurrentMatchIndex(prev => stepIndex(prev, searchMatchIds.length, 1))}
+              title="Next (↓ / Enter)"
+            />
+            <Button
+              type="text"
+              size="small"
+              icon={<CloseOutlined />}
+              onClick={closeFind}
+              title="Close (Esc)"
+            />
+          </div>
         )}
-      </div>
 
       <div className="mib-tree-content">
         {filteredTreeData.length > 0 ? (
@@ -942,6 +1073,7 @@ export function MibTreePanel({ width }: MibTreePanelProps): React.ReactElement {
             <p style={{ fontSize: 12 }}>or drag and drop .my/.mib files here</p>
           </div>
         )}
+      </div>
       </div>
 
       {/* Node detail section with vertical resize handle */}

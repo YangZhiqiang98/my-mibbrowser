@@ -11,7 +11,7 @@ export interface MibTreeIndex {
   validNodeIds: ReadonlySet<string>
   getAncestorIds: (nodeId: string) => string[]
   getSubtreeKeys: (nodeId: string) => string[]
-  search: (query: string) => MibTreeSearchResult
+  search: (query: string, caseSensitive?: boolean) => MibTreeSearchResult
 }
 
 interface IndexedNode {
@@ -56,24 +56,29 @@ export function buildMibTreeIndex(tree: readonly MibTreeNodeData[]): MibTreeInde
     validNodeIds,
     getAncestorIds: (nodeId) => [...(indexedById.get(nodeId)?.ancestorIds ?? [])],
     getSubtreeKeys: (nodeId) => [...(indexedById.get(nodeId)?.subtreeKeys ?? [])],
-    search: (query) => searchMibTreeIndex(indexedById, query)
+    search: (query, caseSensitive = false) => searchMibTreeIndex(indexedById, query, caseSensitive)
   }
 }
 
-function searchMibTreeIndex(indexedById: ReadonlyMap<string, IndexedNode>, query: string): MibTreeSearchResult {
-  const normalizedQuery = query.trim().toLowerCase()
-  if (!normalizedQuery) {
+function searchMibTreeIndex(
+  indexedById: ReadonlyMap<string, IndexedNode>,
+  query: string,
+  caseSensitive: boolean
+): MibTreeSearchResult {
+  const trimmed = query.trim()
+  if (!trimmed) {
     return { matchIds: [], ancestorIds: [] }
   }
+  const needle = caseSensitive ? trimmed : trimmed.toLowerCase()
 
   const matchIds: string[] = []
   const ancestorIds = new Set<string>()
 
   for (const indexedNode of indexedById.values()) {
     const { node } = indexedNode
-    const isMatch =
-      node.name.toLowerCase().includes(normalizedQuery) ||
-      node.oid.toLowerCase().includes(normalizedQuery)
+    const name = caseSensitive ? node.name : node.name.toLowerCase()
+    const oid = caseSensitive ? node.oid : node.oid.toLowerCase()
+    const isMatch = name.includes(needle) || oid.includes(needle)
 
     if (isMatch) {
       matchIds.push(node.id)
