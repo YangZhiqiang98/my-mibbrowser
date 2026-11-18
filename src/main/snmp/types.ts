@@ -29,8 +29,10 @@ export interface SnmpConfig {
   port: number
   /** SNMP version */
   version: SnmpVersion
-  /** Community string for v1/v2c */
+  /** Community string for v1/v2c read operations */
   community: string
+  /** Community string for v1/v2c write (SET) operations; falls back to `community` when blank */
+  writeCommunity: string
   /** SNMPv3 security level */
   securityLevel: SecurityLevel
   /** SNMPv3 username */

@@ -21,6 +21,7 @@ function baseConfig(overrides: Partial<SnmpConfig> = {}): SnmpConfig {
     port: 161,
     version: 'v2c',
     community: 'secret-community',
+    writeCommunity: 'secret-write-community',
     securityLevel: 'authPriv',
     username: 'admin',
     authProtocol: 'sha',
@@ -49,6 +50,8 @@ describe('encryptProfileConfig', () => {
     expect(result.encrypted).toBe(true)
     expect(result.config.community).not.toBe('secret-community')
     expect(result.config.community).toBe(Buffer.from('enc:secret-community', 'utf-8').toString('base64'))
+    expect(result.config.writeCommunity).not.toBe('secret-write-community')
+    expect(result.config.writeCommunity).toBe(Buffer.from('enc:secret-write-community', 'utf-8').toString('base64'))
     // Non-sensitive fields are untouched.
     expect(result.config.host).toBe('127.0.0.1')
   })

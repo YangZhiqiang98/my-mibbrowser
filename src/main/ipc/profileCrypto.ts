@@ -13,11 +13,11 @@ export interface SafeStorageLike {
 }
 
 /**
- * SnmpConfig fields that hold secrets and must be encrypted at rest. All three
+ * SnmpConfig fields that hold secrets and must be encrypted at rest. All four
  * are `string`, which keeps indexed reads/writes below well-typed.
  */
-type SensitiveField = 'community' | 'authPassword' | 'privPassword'
-const SENSITIVE_FIELDS: SensitiveField[] = ['community', 'authPassword', 'privPassword']
+type SensitiveField = 'community' | 'writeCommunity' | 'authPassword' | 'privPassword'
+const SENSITIVE_FIELDS: SensitiveField[] = ['community', 'writeCommunity', 'authPassword', 'privPassword']
 
 /**
  * Encrypt the sensitive fields of an SNMP config for on-disk storage.

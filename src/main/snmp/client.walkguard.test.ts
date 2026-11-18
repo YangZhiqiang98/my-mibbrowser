@@ -70,7 +70,7 @@ vi.mock('net-snmp', () => ({ default: mockSnmp }))
 const { snmpWalk, snmpBulkWalk } = await import('./client')
 
 const config: SnmpConfig = {
-  host: '127.0.0.1', port: 161, version: 'v2c', community: 'public',
+  host: '127.0.0.1', port: 161, version: 'v2c', community: 'public', writeCommunity: 'private',
   securityLevel: 'noAuthNoPriv', username: '', authProtocol: 'md5', authPassword: '',
   privProtocol: 'des', privPassword: '', timeout: 1000, retries: 0, transport: 'udp4',
   bulkMaxRepetitions: 10, bulkNonRepeaters: 0

@@ -184,9 +184,21 @@ function formatVarbindValue(varbind: { oid: string; type: number; value: unknown
 }
 
 /**
+ * Resolve the community string a session should authenticate with.
+ *
+ * Read operations use `config.community`; write operations (SET) use
+ * `config.writeCommunity`, falling back to the read community when the write
+ * community is blank (e.g. a legacy config or an intentionally shared string).
+ */
+function communityFor(config: SnmpConfig, purpose: 'read' | 'write'): string {
+  if (purpose === 'write' && config.writeCommunity.trim()) return config.writeCommunity
+  return config.community
+}
+
+/**
  * Create an SNMP session based on configuration
  */
-function createSession(config: SnmpConfig): ReturnType<typeof snmp.createSession> {
+function createSession(config: SnmpConfig, purpose: 'read' | 'write' = 'read'): ReturnType<typeof snmp.createSession> {
   const transport = resolveSnmpTransport(config.transport)
 
   if (config.version === 'v3') {
@@ -220,7 +232,7 @@ function createSession(config: SnmpConfig): ReturnType<typeof snmp.createSession
     })
   }
 
-  return snmp.createSession(config.host, config.community, {
+  return snmp.createSession(config.host, communityFor(config, purpose), {
     port: config.port,
     timeout: config.timeout,
     retries: config.retries,
@@ -576,7 +588,8 @@ export function snmpSet(config: SnmpConfig, values: SnmpSetValue[]): Promise<Snm
 
     let session: SnmpSession
     try {
-      session = createSession(config)
+      // SET is the only write operation — authenticate with the write community.
+      session = createSession(config, 'write')
     } catch (e) {
       finish(null, {
         success: false,

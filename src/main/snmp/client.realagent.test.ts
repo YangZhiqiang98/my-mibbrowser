@@ -27,7 +27,7 @@ const SCALARS: Array<{ name: string; oid: string; scalarType: number; value: str
 ]
 
 const config: SnmpConfig = {
-  host: '127.0.0.1', port: PORT, version: 'v2c', community: 'public',
+  host: '127.0.0.1', port: PORT, version: 'v2c', community: 'public', writeCommunity: 'private',
   securityLevel: 'noAuthNoPriv', username: '', authProtocol: 'md5', authPassword: '',
   privProtocol: 'des', privPassword: '', timeout: 2000, retries: 1, transport: 'udp4',
   bulkMaxRepetitions: 10, bulkNonRepeaters: 0

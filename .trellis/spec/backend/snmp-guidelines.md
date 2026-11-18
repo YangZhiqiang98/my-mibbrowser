@@ -447,9 +447,43 @@ if (isNoSuchNameEnd(error)) { finish(session, { success: true, varbinds: results
 
 ---
 
+## Constraint 9: v1/v2c Read vs Write Community Selection Happens In `createSession`
+
+`SnmpConfig` carries two community strings for v1/v2c: `community` (read) and `writeCommunity` (write, default `private`). Only SET is a write operation; every other entry point (`snmpGet`, `snmpGetNext`, `snmpGetBulk`, `snmpWalk`, `snmpBulkWalk`) reads. The community choice must be made in exactly one place:
+
+```typescript
+function communityFor(config: SnmpConfig, purpose: 'read' | 'write'): string {
+  if (purpose === 'write' && config.writeCommunity.trim()) return config.writeCommunity
+  return config.community
+}
+
+function createSession(config: SnmpConfig, purpose: 'read' | 'write' = 'read') { /* ... */ }
+```
+
+`snmpSet` calls `createSession(config, 'write')`; every read operation uses the default. A blank/whitespace `writeCommunity` falls back to `community` (shared-string devices, legacy configs). SNMPv3 sessions ignore communities entirely and always go through `createV3Session`.
+
+### Why
+
+- Agents commonly grant read access via `public` and write access via a different string. A single shared community field forces SET to fail against read-only communities — or worse, tempts users to widen the read community to make SET work.
+- The selection must NOT be scattered across renderer call sites (QueryPanel, MibTreePanel, TableViewer, Set tool window all pass the same `snmpConfig` through IPC). Centralizing in `createSession` means every current and future caller path is correct by default — same reasoning as Constraint 5 (bulk defaults) and Constraint 6 (option mapping).
+- Fallback-to-read on blank (rather than failing) keeps legacy saved profiles and last-snmp-config records working after upgrade: `normalizeSnmpConfig()` backfills `writeCommunity: 'private'`, and an intentionally cleared field means "same as read".
+
+### How to Apply
+
+- Never read `config.community` or `config.writeCommunity` outside `createSession` / `communityFor` in `client.ts`.
+- New write-shaped operations (if any besides SET ever appear) must pass `'write'` explicitly.
+- `writeCommunity` belongs to `SENSITIVE_FIELDS` in `src/main/ipc/profileCrypto.ts` (encrypted at rest like `community`).
+- Any persisted or loaded `SnmpConfig` must be normalized to include `writeCommunity`.
+
+### Tests Required
+
+- Mocked-`net-snmp` unit tests (`client.community.test.ts`) asserting: GET uses the read community, SET uses the write community, blank write falls back to read, and v3 never routes through `createSession`.
+
+---
+
 ## Cross-References
 
-- `src/main/snmp/client.ts` — canonical implementations of `oidInSubtree`, `stripLeadingDot`, `formatVarbindValue`, `snmpWalk`, `snmpBulkWalk`, `snmpGetBulk`, `flattenBulkVarbinds`, `cancelCurrentSnmpOperation`, the `WALK_MAX_ROWS` cap, and the `finish(session, result)` pattern in all six SNMP entry points.
+- `src/main/snmp/client.ts` — canonical implementations of `oidInSubtree`, `stripLeadingDot`, `formatVarbindValue`, `snmpWalk`, `snmpBulkWalk`, `snmpGetBulk`, `flattenBulkVarbinds`, `cancelCurrentSnmpOperation`, the `WALK_MAX_ROWS` cap, the `finish(session, result)` pattern in all six SNMP entry points, and the read/write community selection (`communityFor` / `createSession(config, purpose)`) from Constraint 9.
 - `src/main/snmp/oid.ts` — pure, net-snmp-free `isNoSuchNameEnd` (SNMPv1 `noSuchName` end-of-MIB detection) for the Constraint 8 walk-termination guards. The revisited-OID loop guard (a) lives in `client.ts` as a per-Promise `seenOids` set and needs no OID comparator.
 - `src/main/mib/parser.ts` — `parseOidDef` (regex `^(\S+)((?:\s+\d+)+)$`, returns `childNumbers: number[]` so `::= { enterprises 1 2 }` parses) and `resolveParent`, which prefers a parent defined in the SAME module (`${module}::${name}`) before a cross-module by-name fallback. Both the first pass and the resolved-OID-requiring fixpoint second pass in `buildRelationships` route through `resolveParent`; this fixes cross-module same-named parents mis-attaching to the first definition seen.
 - `src/main/snmp/trapReceiver.ts` — Trap / Inform receiver singleton, event formatting, receiver status, fatal error classification, and SNMPv3 authorizer setup.

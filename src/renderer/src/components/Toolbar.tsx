@@ -343,13 +343,22 @@ export function Toolbar(): React.ReactElement {
               />
             </div>
             {config.version !== 'v3' && (
-              <div className="query-form-item">
-                <label>Community</label>
-                <Input
-                  value={config.community}
-                  onChange={(e) => handleConfigChange({ community: e.target.value })}
-                />
-              </div>
+              <>
+                <div className="query-form-item">
+                  <label>Read Community</label>
+                  <Input
+                    value={config.community}
+                    onChange={(e) => handleConfigChange({ community: e.target.value })}
+                  />
+                </div>
+                <div className="query-form-item">
+                  <label>Write Community</label>
+                  <Input
+                    value={config.writeCommunity}
+                    onChange={(e) => handleConfigChange({ writeCommunity: e.target.value })}
+                  />
+                </div>
+              </>
             )}
           </div>
 
