@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 42
-- **Last Active**: 2026-07-23
+- **Total Sessions**: 43
+- **Last Active**: 2026-11-18
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1577 | Active |
+| `journal-1.md` | ~1598 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 43 | 2026-11-18 | Read/write community split | `535c4d7` | `main` |
 | 42 | 2026-07-23 | Port legacy SNMP correctness fixes (R1-R11) across 3 PRs | `9b53064`, `03cf2bc`, `411b9c9`, `a9372d4` | `main` |
 | 41 | 2026-05-27 | Add fixed packaging scripts | `6e72f2f` | `main` |
 | 40 | 2026-05-27 | Fix cache disable immediate refresh | `10d398e` | `main` |

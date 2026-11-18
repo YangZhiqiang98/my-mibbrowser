@@ -1575,3 +1575,24 @@ Ported 11 correctness fixes from the legacy project onto the refactored architec
 ### Next Steps
 
 - None - task complete
+
+
+## Session 43: Read/write community split
+
+**Date**: 2026-11-18
+**Task**: Read/write community split
+**Branch**: `main`
+
+### Summary
+
+Split v1/v2c community into read (public) and write (private); SET authenticates via writeCommunity with read fallback, centralized in createSession; encrypted at rest; unit tests + Constraint 9 spec.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `535c4d7` | (see git log) |
+
+### Status
+
+[OK] **Completed**
